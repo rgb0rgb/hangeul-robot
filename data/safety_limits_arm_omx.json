@@ -1,0 +1,163 @@
+{
+  "11": [
+    -180,
+    180
+  ],
+  "12": [
+    -85.94,
+    85.94
+  ],
+  "13": [
+    -85.94,
+    80.21
+  ],
+  "14": [
+    -97.4,
+    112.87
+  ],
+  "15_min": 1060,
+  "15_max": 2720,
+  "temperature_limits_c": {
+    "11": 70.0,
+    "12": 70.0,
+    "13": 70.0,
+    "14": 70.0,
+    "15": 70.0
+  },
+  "velocity_limits": {
+    "11": 200,
+    "12": 200,
+    "13": 200,
+    "14": 200,
+    "15": 50
+  },
+  "default_motion_profile": "FAST",
+  "person_gate_policy": "danger_zone",
+  "person_gate_camera_enabled": false,
+  "person_gate_danger_zone": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+  ],
+  "operator_away_mode": false,
+  "custom_motion_profile": {
+    "max_stage_delta_ticks": 1000,
+    "acceleration": 30
+  },
+  "joint_tick_limits": {
+    "11": [
+      0,
+      4095
+    ],
+    "12": [
+      1070,
+      3026
+    ],
+    "13": [
+      1070,
+      2961
+    ],
+    "14": [
+      939,
+      3333
+    ],
+    "15": [
+      1060,
+      2720
+    ]
+  },
+  "joint_limit_source": "safety_limits.json degrees for configured arm joints, gripper ticks for configured gripper joint",
+  "robot_joints": {
+    "robot_id": "openmanipulator_x",
+    "robot_family": "openmanipulator_x",
+    "arm_joints": [
+      {
+        "id": "11",
+        "joint_id": 11,
+        "role": "arm",
+        "label_kr": "J11: 베이스",
+        "label_en": "J11: Base",
+        "default_ticks": 2048
+      },
+      {
+        "id": "12",
+        "joint_id": 12,
+        "role": "arm",
+        "label_kr": "J12: 어깨",
+        "label_en": "J12: Shoulder",
+        "default_ticks": 1150
+      },
+      {
+        "id": "13",
+        "joint_id": 13,
+        "role": "arm",
+        "label_kr": "J13: 팔꿈치",
+        "label_en": "J13: Elbow",
+        "default_ticks": 2650
+      },
+      {
+        "id": "14",
+        "joint_id": 14,
+        "role": "arm",
+        "label_kr": "J14: 손목",
+        "label_en": "J14: Wrist",
+        "default_ticks": 2048
+      }
+    ],
+    "gripper_joint": {
+      "id": "15",
+      "joint_id": 15,
+      "role": "gripper",
+      "label_kr": "J15: 그리퍼",
+      "label_en": "J15: Gripper",
+      "default_ticks": 1958
+    },
+    "all_joints": [
+      {
+        "id": "11",
+        "joint_id": 11,
+        "role": "arm",
+        "label_kr": "J11: 베이스",
+        "label_en": "J11: Base",
+        "default_ticks": 2048
+      },
+      {
+        "id": "12",
+        "joint_id": 12,
+        "role": "arm",
+        "label_kr": "J12: 어깨",
+        "label_en": "J12: Shoulder",
+        "default_ticks": 1150
+      },
+      {
+        "id": "13",
+        "joint_id": 13,
+        "role": "arm",
+        "label_kr": "J13: 팔꿈치",
+        "label_en": "J13: Elbow",
+        "default_ticks": 2650
+      },
+      {
+        "id": "14",
+        "joint_id": 14,
+        "role": "arm",
+        "label_kr": "J14: 손목",
+        "label_en": "J14: Wrist",
+        "default_ticks": 2048
+      },
+      {
+        "id": "15",
+        "joint_id": 15,
+        "role": "gripper",
+        "label_kr": "J15: 그리퍼",
+        "label_en": "J15: Gripper",
+        "default_ticks": 1958
+      }
+    ],
+    "arm_joint_count": 4,
+    "has_gripper": true
+  },
+  "robot_model": "openmanipulator_x",
+  "device": "/dev/ttyUSB0"
+}

@@ -1,0 +1,896 @@
+/* 로봇 상태 패널 — 환경 설정 패널과 동일한 테마 변수 배경을 쓴다. */
+.hangeul-grid-panel {
+  border: 1px solid var(--theme-border, #334155);
+  border-radius: 12px;
+  background: var(--theme-panel-bg, #111827);
+  padding: 16px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+}
+
+.hangeul-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.hangeul-head-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hangeul-kicker {
+  color: var(--theme-primary, #38bdf8);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.hangeul-panel-head h2 {
+  color: var(--theme-text, #f8fafc);
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* ── 안전 범위 설정 모달 테마 통일 ──────────────────────────────────
+   simple.js에서 복사된 모달 내부(관절 구동 범위/온도 임계값/동작 속도/
+   사람 감지)는 인라인 dark 색상이 박혀 있어 환경 설정과 배경이 달랐다.
+   인라인 스타일보다 우선하도록 !important로 테마 변수를 강제한다. */
+#s-admin-modal [style*="background:#0f172a"] {
+  background: var(--theme-panel-bg, #0f172a) !important;
+}
+
+#s-admin-modal [style*="background:#1e293b"] {
+  background: var(--theme-control-bg, #1e293b) !important;
+  color: var(--theme-text, #f8fafc) !important;
+}
+
+#s-admin-modal [style*="color:#f1f5f9"],
+#s-admin-modal [style*="color:#cbd5e1"] {
+  color: var(--theme-text, #f1f5f9) !important;
+}
+
+#s-admin-modal [style*="color:#94a3b8"],
+#s-admin-modal [style*="color:#64748b"] {
+  color: var(--theme-muted, #94a3b8) !important;
+}
+
+#s-admin-modal [style*="#334155"],
+#s-admin-modal [style*="#475569"] {
+  border-color: var(--theme-border, #334155) !important;
+}
+
+/* simple.js가 동적으로 생성하는 라벨/입력칸 — cssText는 rgb()로 직렬화되어
+   위 [style*=] 선택자에 안 걸리므로 클래스로 테마 색을 강제한다. */
+#s-admin-modal .s-admin-label {
+  color: var(--theme-text, #f1f5f9) !important;
+}
+
+#s-admin-modal .s-admin-input {
+  background: var(--theme-control-bg, #1e293b) !important;
+  color: var(--theme-text, #fff) !important;
+  border-color: var(--theme-border, #475569) !important;
+}
+
+/* 저장 모달도 테마 변수로 통일한다. Light/Orange/Aqua에서는 인라인 dark
+   스타일의 흰 글씨가 흰 배경 위에 남아 라디오 문구가 사라졌었다. */
+#s-save-modal #save-motion-type-panel,
+#s-save-modal #save-joints-picker,
+#s-save-modal #save-ticks-editor,
+#s-save-modal #icon-picker-container {
+  background: var(--theme-control-bg, #0f172a) !important;
+  border-color: var(--theme-border, #334155) !important;
+  color: var(--theme-text, #f1f5f9) !important;
+}
+
+#s-save-modal #save-motion-type-title,
+#s-save-modal #save-motion-type-panel label,
+#s-save-modal #save-motion-type-panel span,
+#s-save-modal #save-joints-picker label,
+#s-save-modal #save-ticks-editor span {
+  color: var(--theme-text, #f1f5f9) !important;
+}
+
+#s-save-modal [style*="color:#94a3b8"],
+#s-save-modal [style*="color:#64748b"] {
+  color: var(--theme-muted, #94a3b8) !important;
+}
+
+#s-save-modal input[type="text"],
+#s-save-modal input[type="number"] {
+  background: var(--theme-panel-bg, #1e293b) !important;
+  color: var(--theme-text, #fff) !important;
+  border-color: var(--theme-border, #475569) !important;
+}
+
+/* ── 그리드 위 작은 툴바 (로봇 추가/삭제 아이콘 + 다중 실행 컨트롤) ──── */
+.hangeul-grid-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.hangeul-grid-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.s-btn-icon {
+  padding: 5px 10px;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+/* ── 로봇 트리 그리드 ──────────────────────────────────────────────
+   헤더와 본문 행이 같은 grid-template-columns(CSS 변수)를 공유해 열이
+   항상 정렬되도록 한다. 체크박스는 고정폭, '선택 로봇'은 나머지 폭. */
+.hangeul-robot-grid {
+  /* 2026-07-23 (사용자 지적): 시간/선택 로봇 폭이 기본값부터 달라서(160 vs 130)
+     눈에 거슬렸다 — 140px로 통일. select 안 로봇타입 이름이 안 잘리는 최소폭. */
+  --hangeul-col-name-w: 200px;
+  --hangeul-col-status-w: 90px;
+  --hangeul-col-time-w: 150px;
+  --hangeul-col-attach-w: 150px;
+  /* 2026-07-23 (사용자 지적): '로봇 선택'~'로봇 순서' 사이 폭 조절이 아예
+     안 됐다(고정 120px, 리사이저 없음) — 다른 열과 같이 변수+리사이저로. */
+  --hangeul-col-clear-w: 120px;
+  border: 1px solid var(--theme-border, #334155);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--theme-control-bg, #1e293b);
+}
+
+.hangeul-grid-header,
+.hangeul-grid-row-main {
+  display: grid;
+  grid-template-columns: 34px var(--hangeul-col-name-w) var(--hangeul-col-status-w) var(--hangeul-col-time-w) var(--hangeul-col-attach-w) var(--hangeul-col-clear-w) 56px;
+  align-items: center;
+  column-gap: 9px;
+}
+
+.hangeul-grid-header {
+  background: var(--theme-panel-bg, #111827);
+  border-bottom: 1px solid var(--theme-border, #334155);
+  padding: 8px 10px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--theme-muted, #94a3b8);
+  text-transform: none;
+}
+
+.hangeul-grid-col {
+  position: relative;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 2026-07-23 (사용자 지적: "글씨는 정중앙으로") — 열 헤더 라벨을 정중앙 정렬. */
+.hangeul-grid-header .hangeul-grid-col {
+  text-align: center;
+}
+
+/* 2026-07-23 (사용자 지적: 체크박스가 헤더/행마다 위치가 어긋남) — 헤더만
+   정중앙 정렬돼 있어 전체선택 체크박스와 행 체크박스가 안 맞았다. 두 곳
+   모두 동일하게 정중앙에 오도록 고정한다. */
+.hangeul-col-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 2026-07-23 (사용자 지적: "상태 및 로봇의 대기 상태를 정중앙으로") — 상태
+   열은 세로 flex라 헤더의 text-align만으론 안 먹었다(교차축 정렬 필요). */
+.hangeul-col-status {
+  align-items: center;
+  text-align: center;
+}
+
+/* 2026-07-23 (사용자 지적: "로봇1~4까지 중앙으로 정렬") — 로봇 이름 열
+   (펼침 화살표+이름)도 정중앙 정렬. */
+.hangeul-col-name {
+  text-align: center;
+}
+
+/* 2026-07-23 (사용자 지적: "행만 줄 표시가 보이는데 열도 함께 줄 표시가
+   보이게") — 가로 구분선(행 경계)만 있고 세로 구분선(열 경계)이 없었다.
+   체크박스/마지막 삭제 열은 시각적으로 붙어 있는 게 자연스러워 제외한다. */
+.hangeul-grid-col:not(.hangeul-col-check):not(.hangeul-col-delete):not(:last-child) {
+  border-right: 1px solid var(--theme-border, #334155);
+  padding-right: 9px;
+}
+
+.hangeul-col-resizer {
+  /* 부모(.hangeul-grid-col)가 overflow:hidden(글자 말줄임용)이라 핸들이
+     부모 경계 밖(음수 오프셋)으로 나가면 클릭 영역이 잘려서 안 먹는다 —
+     부모 안쪽 경계에 딱 붙여 둔다. */
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 1;
+}
+
+.hangeul-col-resizer:hover {
+  background: var(--theme-primary, #38bdf8);
+  opacity: 0.4;
+}
+
+.hangeul-grid-body {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.hangeul-grid-row {
+  border-bottom: 1px solid var(--theme-border, #334155);
+}
+
+.hangeul-grid-row:last-child {
+  border-bottom: none;
+}
+
+.hangeul-grid-row-main {
+  padding: 8px 10px;
+  cursor: default;
+}
+
+.hangeul-row-selected {
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.hangeul-tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 2px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  color: var(--theme-muted, #94a3b8);
+  user-select: none;
+  transition: background-color 0.12s, color 0.12s;
+}
+
+.hangeul-tree-toggle:hover {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--theme-primary, #38bdf8);
+}
+
+.hangeul-row-name {
+  color: var(--theme-text, #f1f5f9);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hangeul-row-name-edit {
+  width: calc(100% - 20px);
+  box-sizing: border-box;
+  border: 1px solid var(--theme-primary, #38bdf8);
+  border-radius: 4px;
+  background: var(--theme-panel-bg, #0f172a);
+  color: var(--theme-text, #f1f5f9);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 3px 6px;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+
+.hangeul-col-status {
+  color: var(--theme-muted, #cbd5e1);
+  font-size: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* 실제 로봇이 움직이는 동안('실행') 상태 글씨가 깜박여 눈에 띄게 한다. */
+@keyframes hangeul-status-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.hangeul-status-running {
+  color: #4ade80;
+  font-weight: 700;
+  animation: hangeul-status-blink 1s ease-in-out infinite;
+}
+
+.hangeul-col-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.hangeul-clear-btn {
+  border: 1px solid var(--theme-border, #475569);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theme-muted, #94a3b8);
+  font-size: 0.72rem;
+  padding: 4px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+
+.hangeul-clear-btn:hover {
+  color: #f87171;
+  border-color: #7f1d1d;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+/* 2026-07-23: 행마다 바로 삭제할 수 있는 버튼. 기존엔 체크박스 1개만 체크한
+   뒤 툴바 아이콘을 눌러야 했는데, 다중실행 체크박스와 기능이 겹쳐 여러 대
+   체크된 채로는 조용히 실패했다 — 행 단위로 명확하게 분리한다. */
+.hangeul-row-delete-btn {
+  /* 2026-08-19: 아이콘(🗑)에서 글자('삭제')로 바꿨다 — 아이콘은 무슨 뜻인지
+     사람마다 다르게 읽는다. 글자가 들어가도록 여백과 테두리를 준다. */
+  border: 1px solid var(--theme-border, #334155);
+  background: transparent;
+  color: var(--theme-muted, #64748b);
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  line-height: 1.3;
+  white-space: nowrap;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+}
+
+.hangeul-row-delete-btn:hover {
+  color: #f87171;
+  border-color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+/* ── 로봇 상태 패널 제목 옆 진행 상황 안내 문구 ───────────────────── */
+.hangeul-progress-ticker {
+  margin-top: 3px;
+  font-size: 0.78rem;
+  color: var(--theme-primary, #38bdf8);
+  min-height: 1.1em;
+}
+
+.hangeul-attach-select {
+  width: 100%;
+  border: 1px solid var(--theme-border, #475569);
+  border-radius: 6px;
+  background: var(--theme-panel-bg, #0f172a);
+  color: var(--theme-text, #f1f5f9);
+  font-size: 0.8rem;
+  padding: 4px 6px;
+}
+
+.hangeul-attach-select option:disabled {
+  color: var(--theme-muted, #64748b);
+}
+
+.hangeul-grid-children {
+  padding: 4px 10px 10px 58px;
+  background: var(--theme-panel-bg, #0f172a);
+}
+
+.hangeul-grid-child {
+  font-size: 0.78rem;
+  color: var(--theme-muted, #cbd5e1);
+  padding: 3px 0;
+}
+
+.hangeul-grid-child-empty {
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.hangeul-col-time {
+  display: flex;
+  align-items: center;
+  /* 2026-07-23 (사용자 지적: "시간이 중앙이 아니다") — 이 셀이 flex라서
+     헤더 라벨에 text-align만으론 안 먹었다(flex는 justify-content 필요,
+     로봇순서/체크박스 열은 이미 이렇게 돼 있었음). */
+  justify-content: center;
+  gap: 4px;
+}
+
+.hangeul-status-time {
+  border: 1px solid var(--theme-border, #475569);
+  border-radius: 8px;
+  background: var(--theme-control-bg, #0f172a);
+  color: var(--theme-text, #f1f5f9);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  /* 2026-07-23 (사용자 지적: "시간이 중앙 정렬이 안되어 있다") — 네이티브
+     time 위젯 내부 텍스트도 정중앙 정렬. */
+  text-align: center;
+  padding: 5px 8px;
+  /* 브라우저/OS별로 시간 입력 위젯이 12시간제(오전/오후 포함)로 렌더링되면
+     좁으면 잘린다 — 시간 열 너비(기본 150px, 드래그로 조절 가능)를 그대로 따른다. */
+  flex: 1 1 auto;
+  min-width: 80px;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+/* 2026-07-23 (사용자 지적: 시간지우기는 시간 입력 옆에 있어야 함) — 지우는
+   대상과 같은 칸에 있는 작은 아이콘 버튼. */
+.hangeul-time-clear-btn {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--theme-border, #475569);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--theme-muted, #64748b);
+  font-size: 0.68rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+
+.hangeul-time-clear-btn:hover {
+  color: #f87171;
+  border-color: #7f1d1d;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.hangeul-status-time:hover {
+  border-color: var(--theme-muted, #64748b);
+}
+
+.hangeul-status-time:focus {
+  outline: none;
+  border-color: var(--theme-primary, #38bdf8);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+}
+
+/* 네이티브 시계 아이콘이 브라우저 기본 회색으로 튀어 보이는 것을 테마에
+   맞춰 은은하게(다크 배경에서 밝게 반전 + 낮은 불투명도) 다듬는다. */
+.hangeul-status-time::-webkit-calendar-picker-indicator {
+  filter: invert(0.6);
+  opacity: 0.7;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: opacity 0.15s;
+}
+
+.hangeul-status-time::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* 2026-07-23: 로봇 전환 없이도 마지막 실행 결과를 볼 수 있는 상시 노출 줄. */
+.hangeul-last-result {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--theme-muted, #64748b);
+  line-height: 1.3;
+  overflow-wrap: break-word;
+}
+
+.hangeul-last-result:empty {
+  display: none;
+}
+
+.hangeul-last-result-error {
+  color: #f87171;
+}
+
+.hangeul-multi-state {
+  /* 상태 열이 좁아('대기'/'완료' 등 짧은 글자 기준 폭) '✔ 다중 실행 완료'
+     같은 긴 문구는 한 줄로 담을 수 없다 — 자르지 말고 줄바꿈해서 전체가
+     보이게 한다(예전엔 nowrap+ellipsis라 '다' 한 글자만 보였음). */
+  display: block;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--theme-primary, #38bdf8);
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.hangeul-multi-state:empty {
+  display: none;
+}
+
+.hangeul-multi-hint {
+  margin-top: 7px;
+  font-size: 0.74rem;
+  color: var(--theme-muted, #64748b);
+}
+
+/* ── 좁은 화면(모바일/LAN 데모 폰 접속) 대응 ──────────────────────────
+   2026-07-23: 그리드가 px 고정폭 grid-template-columns라 폰에서 가로
+   스크롤/잘림이 발생했다 — 768px 이하에서는 그리드를 가로 스크롤 컨테이너로
+   감싸고, 480px 이하에서는 열 폭을 더 좁혀 스크롤 폭을 줄인다. */
+@media (max-width: 768px) {
+  .s-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .s-header-right,
+  .s-settings-menu,
+  #btn-settings-menu {
+    width: 100%;
+  }
+
+  .s-settings-panel {
+    left: 0;
+    right: 0;
+    width: auto;
+  }
+
+  .s-main {
+    padding: 14px 10px 44px;
+  }
+
+  .s-section,
+  .hangeul-grid-panel {
+    padding: 12px;
+  }
+
+  .hangeul-panel-head,
+  .hangeul-grid-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hangeul-head-controls,
+  .hangeul-grid-toolbar-group,
+  .s-queue-controls {
+    width: 100%;
+  }
+
+  .hangeul-grid-toolbar .s-btn,
+  .hangeul-head-controls .s-btn,
+  .s-queue-controls .s-btn,
+  #btn-load-sequence {
+    min-height: 42px;
+    flex: 1 1 120px;
+  }
+
+  .hangeul-robot-grid {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .hangeul-grid-header,
+  .hangeul-grid-row-main {
+    min-width: 680px;
+  }
+  .hangeul-grid-toolbar {
+    gap: 6px;
+  }
+  .hangeul-grid-toolbar-group {
+    flex-wrap: wrap;
+  }
+
+  .s-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .s-card {
+    min-height: 124px;
+    padding: 12px 8px;
+  }
+
+  .s-jog-row-header {
+    display: none;
+  }
+
+  .s-jog-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .s-jog-row > div,
+  .s-jog-val,
+  .s-jog-btns {
+    width: 100%;
+  }
+
+  .s-jog-val {
+    justify-content: flex-start;
+    min-height: 34px;
+    padding: 6px 8px;
+  }
+
+  .s-jog-row input[type="number"] {
+    width: 100% !important;
+    min-height: 38px;
+  }
+
+  .s-jog-row [id^="btn-move-"] {
+    min-width: 68px;
+    min-height: 38px;
+  }
+
+  .s-jog-btns {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .s-btn-jog {
+    min-height: 40px;
+  }
+
+  .s-micro-move-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .s-micro-move-controls button {
+    grid-column: 1 / -1;
+    min-height: 42px;
+  }
+
+  .s-modal {
+    width: min(94vw, 560px) !important;
+    max-height: 88vh;
+    overflow-y: auto;
+  }
+
+  .s-modal-btns {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .s-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .s-section-title {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .s-repeat-panel [style*="display:flex"],
+  #save-icon + button,
+  #icon-picker-container + div {
+    flex-wrap: wrap;
+  }
+
+  #save-ticks-editor {
+    grid-template-columns: 1fr !important;
+  }
+
+  #save-ticks-editor > div {
+    grid-column: auto !important;
+  }
+
+  #admin-range-grid,
+  #admin-temp-grid,
+  #admin-vel-grid,
+  #admin-custom-profile-panel [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .hangeul-robot-grid {
+    --hangeul-col-name-w: 140px;
+    --hangeul-col-status-w: 70px;
+    --hangeul-col-time-w: 110px;
+    --hangeul-col-attach-w: 110px;
+    --hangeul-col-clear-w: 100px;
+  }
+}
+
+
+
+/* ── 머리말 통일 (2026-08-16) ────────────────────────────────────
+   자세 만들기 · 동작 순서 · 실행 순서 · 반복/휴식이 서로 다른 크기로
+   보이던 것을 한 형식으로 맞춘다. 글씨 0.85rem, 아이콘 1rem. */
+.s-head-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  /* 테마마다 배경색이 달라 고정색을 쓰면 글씨가 사라진다.
+     밝은 테마는 --theme-text(어두운 글씨), 어두운 테마는 기본값을 쓴다. */
+  color: var(--theme-text, #f1f5f9);
+  border: 1px solid var(--theme-border, #475569);
+  background: var(--theme-panel-bg, transparent);
+  border-radius: 6px;
+  padding: 6px 16px;
+  line-height: 1.2;
+}
+/* 부모 제목의 회색 !important 규칙이 칩 안 글씨를 덮지 않게 한다 */
+.s-section-title .s-head-chip,
+.s-section-title .s-head-chip span { color: var(--theme-text, #f1f5f9) !important; }
+/* 아이콘은 CSS로 붙인다. 자식 요소로 두면 simple.js가 문구를 다시 쓸 때 지워진다. */
+.s-head-chip::before { font-size: 1rem; line-height: 1; }
+.s-head-chip.ico-pose::before   { content: "✏️"; }
+.s-head-chip.ico-cards::before  { content: "🗂️"; }
+.s-head-chip.ico-queue::before  { content: "📋"; }
+.s-head-chip.ico-repeat::before { content: "🔁"; }
+/* 동작 순서는 실제 탭 버튼이라 눌린 상태 색을 유지한다 */
+button.s-tab-btn.active.s-head-chip { color: #ffffff; border-color: #3b82f6; }
+/* 머리말을 감싸는 줄의 옛 소문자·회색 규칙이 칩 안까지 내려오지 않게 한다 */
+.s-section-title .s-head-chip { vertical-align: middle; }
+
+/* 반복 / 휴식은 성격이 달라 박스로 구분한다 */
+.s-section.s-boxed {
+  border: 2px solid #3b82f6;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.06);
+  padding: 16px;
+}
+.s-section.s-boxed .s-head-chip { border-color: #3b82f6; }
+
+
+/* 머리말 줄 정렬 — 칩과 버튼과 안내문이 한 줄에서 가운데로 맞도록 */
+.s-head-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* '설정 열기/닫기'를 반복/휴식 칩과 같은 크기·모양으로 (밑줄 링크 모양 해제) */
+.s-repeat-toggle.s-head-chip {
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 6px 16px;
+  border: 1px solid var(--theme-border, #475569);
+  border-radius: 6px;
+  background: var(--theme-panel-bg, transparent);
+  color: var(--theme-text, #f1f5f9);
+  cursor: pointer;
+}
+.s-repeat-toggle.s-head-chip::before { content: "⚙️"; font-size: 1rem; line-height: 1; }
+.s-head-hint {
+  font-size: 0.78rem;
+  color: var(--theme-muted, #64748b);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+
+/* ── 부재 모드 묶음 (2026-08-16) ────────────────────────────────
+   '부재 모드 · 야간 자동 · 저장'은 한 기능이다. 흩어져 있으면 저장 버튼이
+   무엇을 저장하는지 알 수 없어서, 테두리로 묶고 제목을 붙인다. */
+.s-away-group {
+  border: 1px solid var(--theme-border, #475569);
+  border-radius: 6px;
+  padding: 8px;
+  margin: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--theme-panel-bg, rgba(148, 163, 184, 0.06));
+}
+.s-away-group-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--theme-muted, #94a3b8);
+}
+.s-away-schedule-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.72rem;
+  color: var(--theme-muted, #94a3b8);
+}
+.s-away-schedule-row input[type="time"] {
+  width: 84px;
+  background: var(--theme-control-bg, #0f172a);
+  color: var(--theme-text, #e2e8f0);
+  border: 1px solid var(--theme-border, #334155);
+  border-radius: 4px;
+}
+
+/* 처음 켠 사람의 빈 화면 — 표가 비어 있으면 다음에 무엇을 누를지 적는다 */
+.hangeul-grid-empty {
+  padding: 28px 20px;
+  text-align: center;
+  line-height: 1.7;
+}
+.hangeul-grid-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  opacity: 0.9;
+}
+.hangeul-grid-empty-body {
+  font-size: 13px;
+  opacity: 0.65;
+  white-space: pre-line;
+}
+
+
+/* 로봇 추가 — 모델 고르기 격자.
+   전에는 "omx 또는 mycobot_280_m5"를 손으로 받아 적게 했다. 사람이 부품
+   번호를 외워야 하는 화면은 화면이 아니다. 눈으로 고르게 한다.
+
+   색은 **환경 설정의 화면 배경을 그대로 따른다.** 처음에는 어두운 색을
+   그대로 박아 넣어 Light·Orange·Aqua에서 테두리조차 안 보였다. 이 화면의
+   테마 변수는 --theme-panel-bg / --theme-control-bg / --theme-border /
+   --theme-text / --theme-muted / --theme-primary 여섯이다. 다른 이름을 쓰면
+   조용히 대체값(어두운 색)으로 떨어진다 — 실제로 그랬다. */
+.s-add-robot-modal {
+  max-width: 620px;
+  border: 1px solid var(--theme-border, #334155);
+  background: var(--theme-panel-bg, #1e293b);
+  color: var(--theme-text, #e2e8f0);
+}
+
+.s-add-robot-modal .s-modal-title { color: var(--theme-text, #e2e8f0); }
+.s-add-robot-modal .s-modal-subtitle { color: var(--theme-muted, #94a3b8); }
+
+.s-add-robot-namerow {
+  display: flex; align-items: center; gap: 10px;
+  margin: 12px 0 16px; text-align: left;
+}
+.s-add-robot-namerow span {
+  font-size: 0.85rem; font-weight: 700; white-space: nowrap;
+  color: var(--theme-muted, #94a3b8);
+}
+.s-add-robot-namerow input {
+  flex: 1; padding: 7px 10px; border-radius: 6px; font-size: 0.88rem;
+  border: 1px solid var(--theme-border, #334155);
+  background: var(--theme-control-bg, #0f172a);
+  color: var(--theme-text, #e2e8f0);
+}
+
+#lbl-add-robot-pick {
+  text-align: left; font-size: 0.76rem; font-weight: 700; margin-bottom: 8px;
+  color: var(--theme-muted, #94a3b8);
+}
+
+/* 로봇 목록의 줄과 같은 결로 — 칸을 나누고 테두리 하나로 가른다. */
+.s-model-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px; margin-bottom: 18px;
+}
+.s-model-card {
+  text-align: left; padding: 10px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--theme-border, #334155);
+  background: var(--theme-control-bg, #0f172a);
+  color: var(--theme-text, #e2e8f0);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.s-model-card:hover { border-color: var(--theme-primary, #38bdf8); }
+.s-model-card.is-picked {
+  border-color: var(--theme-primary, #38bdf8);
+  box-shadow: inset 3px 0 0 0 var(--theme-primary, #38bdf8);
+}
+.s-model-card-name { font-weight: 700; font-size: 0.88rem; margin-bottom: 3px; }
+.s-model-card-spec {
+  font-size: 0.74rem; line-height: 1.5;
+  color: var(--theme-muted, #94a3b8);
+}
+.s-model-card-evidence {
+  display: inline-block; margin-top: 7px; font-size: 0.7rem; font-weight: 700;
+}
+/* 실물로 해본 것과 배선만 맞춘 것을 같은 색으로 두지 않는다. */
+.s-model-card-evidence.is-verified { color: var(--theme-green, #4ade80); }
+/* 미검증은 '틀림'이 아니라 '아직 안 해봄'이다 — 오류 빨강을 쓰지 않는다.
+   밝은 배경과 어두운 배경 양쪽에서 읽히는 호박색 하나로 고정한다. */
+.s-model-card-evidence.is-wired { color: #d97706; }
+
+.s-add-robot-modal .s-modal-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+}

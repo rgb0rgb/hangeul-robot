@@ -1,0 +1,11 @@
+{
+  "module_id": "hand_mycobot",
+  "module_class": "hand",
+  "display_name": "MyCobot 손",
+  "mount": "arm_mycobot.tool",
+  "command": {"joint": 7, "unit": "percent", "open": 100, "close": 0},
+  "provides": ["hand.open", "hand.close"],
+  "requires": ["mount.tool_flange"],
+  "limits": {"grip_g": 150, "mass_g": 90},
+  "safety_class": "pinch"
+}

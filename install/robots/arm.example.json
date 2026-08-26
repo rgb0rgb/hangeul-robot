@@ -1,0 +1,6 @@
+{
+  "instance_id": "my_arm",
+  "display_name": "내 로봇",
+  "runtime_url": "http://127.0.0.1:8601",
+  "modules": ["core_a", "arm_omx", "hand_omx"]
+}

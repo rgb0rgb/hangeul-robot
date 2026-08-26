@@ -1,0 +1,17 @@
+{
+  "format": "hangeul_robot.tasks.v1",
+  "meanings": {
+    "demo_move": {
+      "meaning_id": "demo_move",
+      "label": "Demo move",
+      "icon": "*",
+      "steps": [
+        {"kind": "pose", "label": "Ready"},
+        {"kind": "pose", "label": "Work"}
+      ],
+      "updated_at": "2026-08-26T00:00:00"
+    }
+  },
+  "realizations": {}
+}
+

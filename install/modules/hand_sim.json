@@ -1,0 +1,12 @@
+{
+  "module_id": "hand_sim",
+  "module_class": "hand",
+  "display_name": "Simulated Hand",
+  "mount": "arm_sim.tool",
+  "command": {"joint": 5, "unit": "tick", "open": 2500, "close": 1500},
+  "provides": ["hand.open", "hand.close"],
+  "requires": ["mount.tool_flange"],
+  "limits": {"grip_g": 0, "mass_g": 0},
+  "safety_class": "pinch"
+}
+

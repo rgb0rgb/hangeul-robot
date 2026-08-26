@@ -1,0 +1,31 @@
+# 런타임 산출물 — 절대 커밋하지 않는다
+*.log
+*.pid
+*.jsonl
+*Zone.Identifier
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+nohup.out
+
+# 운영자 데이터는 백업/복원 도구로 관리한다 (git 대상 아님)
+data/instances/*/
+!data/instances/.gitkeep
+
+# 이 컴퓨터에서만 뜻이 있는 것 — 화면 상태·장치 임대
+data/console_state.json
+data/leases/
+
+# 허깅페이스에 올릴 묶음은 만들어 쓰는 것이다
+build/
+
+# 대용량
+*.zip
+*.tar.gz
+models/
+
+# 등록된 로봇은 그 사람의 것이다 — 출하물에 넣지 않는다.
+# 화면의 "로봇 추가"로 만들거나 아래 예시 파일을 복사해 쓴다.
+install/robots/*.json
+!install/robots/*.example.json

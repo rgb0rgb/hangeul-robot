@@ -1,0 +1,11 @@
+{
+  "module_id": "hand_omx",
+  "module_class": "hand",
+  "display_name": "OMX 손",
+  "mount": "arm_omx.tool",
+  "command": {"joint": 15, "unit": "tick", "open": 1963, "close": 500},
+  "provides": ["hand.open", "hand.close"],
+  "requires": ["mount.tool_flange"],
+  "limits": {"grip_g": 300, "mass_g": 120},
+  "safety_class": "pinch"
+}

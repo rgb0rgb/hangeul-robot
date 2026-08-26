@@ -1,0 +1,13 @@
+{
+  "module_id": "eye_sim",
+  "module_class": "eye",
+  "display_name": "Simulated Eye",
+  "mount": "core_a.sensor",
+  "provides": ["observe.frame"],
+  "requires": [],
+  "limits": {"fps": 10, "width": 640, "height": 480},
+  "safety_class": "observe",
+  "device": {"linux": "", "windows": ""},
+  "runtime_adapter": "example_camera_adapter:ExampleCameraAdapter"
+}
+

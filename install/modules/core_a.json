@@ -1,0 +1,10 @@
+{
+  "module_id": "core_a",
+  "module_class": "core",
+  "display_name": "몸통",
+  "mount": "root",
+  "provides": ["power.12v", "power.24v", "bus.serial", "bus.ethernet", "safety.stop_broadcast"],
+  "requires": [],
+  "limits": {"power_w": 120, "arm_slots": 2},
+  "safety_class": "none"
+}

@@ -1,0 +1,102 @@
+{
+  "module_id": "arm_omx",
+  "module_class": "arm",
+  "display_name": "OMX 팔",
+  "mount": "core_a.arm_a",
+  "joints": [
+    {
+      "id": 11,
+      "role": "base"
+    },
+    {
+      "id": 12,
+      "role": "joint"
+    },
+    {
+      "id": 13,
+      "role": "joint"
+    },
+    {
+      "id": 14,
+      "role": "joint"
+    }
+  ],
+  "value_unit": "tick",
+  "provides": [
+    "motion.move_joint",
+    "motion.move_pose",
+    "motion.read_pose",
+    "motion.fine_move"
+  ],
+  "requires": [
+    "power.12v",
+    "bus.serial"
+  ],
+  "limits": {
+    "payload_g": 500,
+    "mass_g": 700,
+    "reach_mm": 380
+  },
+  "safety_class": "motion",
+  "runtime_url": "http://127.0.0.1:8601",
+  "device": {
+    "linux": "/dev/ttyUSB0",
+    "windows": "COM3"
+  },
+  "runtime_model": "openmanipulator_x",
+  "runtime_adapter": "openmanipulator_x_arm_adapter:OpenManipulatorXArmAdapter",
+  "unit": {
+    "kind": "tick",
+    "per_degree": 11.377777777777778,
+    "center": 2048
+  },
+  "auto_recover": {
+    "safe_without_operator": false,
+    "reason": "REBOOT이라 토크가 잠깐 꺼진다 — 사람이 확인해야 한다"
+  },
+  "follow": {
+    "horizontal": {
+      "joint": 11,
+      "sign": -1
+    },
+    "vertical": {
+      "joint": 12,
+      "sign": 1
+    },
+    "deadband_pct": 4.0,
+    "gain_deg_per_pct": 0.06,
+    "max_step_deg": 1.2,
+    "interval_sec": 0.04,
+    "velocity": 180,
+    "runaway_degrees": 45.0,
+    "runaway_min_improvement_pct": 1.0,
+    "runaway_blocks": false,
+    "evidence": {
+      "state": "verified",
+      "ko": "dexter_young 라이브 운용값을 바탕으로 조정했다. 목표가 화면 중간으로 더 빨리 오도록 불감대를 4%p로 줄이고, 1.2°/180/0.04초로 올렸다. 계획값 기반 되먹임 의심은 실제 관절 이동량이 아니므로 차단하지 않고 경고만 남긴다.",
+      "en": "Tuned from Dexter Young live values. The deadband is narrowed to 4 percentage points so the target settles closer to the middle, and follow is raised to 1.2 deg / velocity 180 / 0.04 s. Plan-based runaway suspicion is not real measured joint travel, so it warns instead of blocking.",
+      "note_ko": "실제 안전 차단은 관절 한계, ESTOP, 통신/하드웨어 오류가 맡는다. 정상 목표는 더 빠르게 화면 중간으로 보낸다."
+    }
+  },
+  "model_aliases": [
+    "omx",
+    "openmanipulator",
+    "openmanipulator_x"
+  ],
+  "hardware_evidence": {
+    "state": "verified",
+    "ko": "실물로 검증됨",
+    "en": "Verified on real hardware"
+  },
+  "current_limits": {
+    "default_raw": 250,
+    "per_joint_raw": {
+      "13": {
+        "strict": 210,
+        "transient": 240
+      }
+    },
+    "consecutive_samples": 3,
+    "reason": "J13은 정적 부하를 가장 많이 받는데 한계가 140으로 가장 낮게 잡혀 있어 정상 자세에서도 긴급 정지가 걸렸다(실측: 144에서 차단). 관측된 정상값 141~150 위로 여유를 두되, 실제 고장 때 나오는 값(J14에서 802 관측)보다는 충분히 낮게 둔다"
+  }
+}

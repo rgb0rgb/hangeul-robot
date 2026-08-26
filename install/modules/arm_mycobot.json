@@ -1,0 +1,86 @@
+{
+  "module_id": "arm_mycobot",
+  "module_class": "arm",
+  "display_name": "MyCobot 팔",
+  "mount": "core_a.arm_b",
+  "joints": [
+    {
+      "id": 1,
+      "role": "base"
+    },
+    {
+      "id": 2,
+      "role": "joint"
+    },
+    {
+      "id": 3,
+      "role": "joint"
+    },
+    {
+      "id": 4,
+      "role": "joint",
+      "disabled": true,
+      "reason": "고장으로 제외"
+    },
+    {
+      "id": 5,
+      "role": "joint"
+    },
+    {
+      "id": 6,
+      "role": "joint"
+    }
+  ],
+  "value_unit": "millidegree",
+  "provides": [
+    "motion.move_joint",
+    "motion.move_pose",
+    "motion.read_pose",
+    "motion.fine_move"
+  ],
+  "requires": [
+    "power.12v",
+    "bus.serial"
+  ],
+  "limits": {
+    "payload_g": 250,
+    "mass_g": 850,
+    "reach_mm": 280
+  },
+  "safety_class": "motion",
+  "runtime_url": "http://127.0.0.1:8602",
+  "device": {
+    "linux": "/dev/ttyACM0",
+    "windows": "COM6"
+  },
+  "runtime_model": "mycobot_280_m5",
+  "runtime_adapter": "mycobot_280_m5_adapter:MyCobot280M5Adapter",
+  "unit": {
+    "kind": "millidegree",
+    "per_degree": 1000,
+    "center": 0,
+    "note": "모든 관절이 부호 있는 각도. 고정대는 -180~180."
+  },
+  "auto_recover": {
+    "safe_without_operator": false,
+    "reason": "목표에 닿지 않았다는 이유로 스스로 복구하지 않는다. 실제로 이 팔을 움직여 온 dexter_grid 어댑터에는 자동 복구가 없었고, 여기서 더한 자동 복구가 실행 때마다 팔을 떨어뜨렸다",
+    "link_reopen_needs_operator": true,
+    "link_reopen_reason": "포트를 다시 열면 M5가 DTR로 재부팅되어 토크가 끊기고 팔이 떨어진다"
+  },
+  "model_aliases": [
+    "mycobot",
+    "my_cobot",
+    "mycobot280",
+    "mycobot_280_m5"
+  ],
+  "settle": {
+    "tolerance_deg": 3.0,
+    "near_enough_deg": 8.0,
+    "reason": "M5 서보는 백래시가 있어 목표에 1~3도가 늘 남는다. 실측: 목표 50.00에 실제 52.20. 8도 안이면 '갔다'고 보고 막지 않는다 — 멈춰 선 것과는 다르다"
+  },
+  "hardware_evidence": {
+    "state": "verified",
+    "ko": "실물로 검증됨",
+    "en": "Verified on real hardware"
+  }
+}
