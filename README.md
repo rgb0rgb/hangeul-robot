@@ -8,6 +8,12 @@ OpenManipulator-X와 MyCobot 280 M5 어댑터가 들어 있으므로, 사용자�
 안전 범위를 확인하면 실제 로봇을 움직일 수 있습니다.
 고객별 연동 코드와 상업용 운영 도구는 포함하지 않습니다.
 
+Prepared a public release with simulation and supported physical hardware paths.
+Included the console UI, runtime contracts, module descriptors, and public tests.
+Added simulated arm and camera adapters.
+Included OpenManipulator-X and MyCobot 280 M5 adapters with safety limit files.
+Excluded logs, private robot instances, customer-specific material, and commercial operation tools.
+
 ## 공개판에 들어 있는 것
 
 | 항목 | 상태 |
@@ -22,6 +28,30 @@ OpenManipulator-X와 MyCobot 280 M5 어댑터가 들어 있으므로, 사용자�
 | MyCobot 280 M5 어댑터 | 포함 |
 | 기본 안전/전류/온도 제한 파일 | 포함 |
 | 고객/상업 연동 코드 | 제외 |
+
+Public Release Notes
+This folder is a prepared public release candidate for GitHub.
+
+It intentionally focuses on:
+
+architecture
+simulation
+supported physical robot execution
+module descriptor contracts
+the console UI
+safety and verification concepts
+It includes:
+
+OpenManipulator-X adapter
+MyCobot 280 M5 adapter
+safety limit files for those supported arms
+It intentionally excludes:
+
+operator logs
+personal robot instances
+customer-specific or commercial integration documents
+target tracking and arm-follow operational tuning
+The original private working tree remains at /root/hangeul_robot
 
 ## 구조
 
