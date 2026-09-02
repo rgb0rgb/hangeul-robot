@@ -3,6 +3,13 @@
 한글 로봇은 로봇을 교체 가능한 부품 조합으로 보고, 현재 구성에서 가능한 일을 계산하며,
 검증과 안전 조건을 통과한 동작만 실행하는 경량 Physical AI 운영 계층입니다.
 
+## 실제 로봇 동작 영상
+
+[![Hangeul Robot OpenManipulator-X 실제 동작 영상](https://img.youtube.com/vi/BMN9k5TyPFY/hqdefault.jpg)](https://www.youtube.com/shorts/BMN9k5TyPFY)
+
+OpenManipulator-X에서 Hangeul Robot의 명령과 검증된 동작이 실제로 실행되는 영상입니다.
+위 이미지를 클릭하면 YouTube Shorts에서 볼 수 있습니다.
+
 이 공개판은 **시뮬레이션과 지원 하드웨어 직접 연결**을 모두 포함합니다.
 OpenManipulator-X와 MyCobot 280 M5 어댑터가 들어 있으므로, 사용자가 자기 장치와
 안전 범위를 확인하면 실제 로봇을 움직일 수 있습니다.
