@@ -6,12 +6,14 @@
 # 했다(xArm 반증 시험 20260817에서 드러남).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+PYTHON="${PYTHON:-python3}"
+if [ -x .venv/bin/python ]; then PYTHON="$PWD/.venv/bin/python"; fi
 
 MODULE="${1:-}"
 if [ -z "$MODULE" ]; then
   echo "사용법: $0 <부품ID|별칭> [--simulate]"
   echo "붙일 수 있는 팔:"
-  PYTHONPATH=console/src python3 - <<'PY'
+  PYTHONPATH=console/src "$PYTHON" - <<'PY'
 import json, pathlib
 for p in sorted(pathlib.Path("install/modules").glob("*.json")):
     d = json.loads(p.read_text(encoding="utf-8"))
@@ -32,7 +34,7 @@ if [ ! -f "install/modules/${MODULE}.json" ]; then
 fi
 
 # 기술서에서 장치와 포트를 읽는다 (DEVICE/PORT 환경변수로 덮어쓸 수 있다)
-eval "$(MODULE="$MODULE" python3 - <<'PY'
+eval "$(MODULE="$MODULE" "$PYTHON" - <<'PY'
 import json, os, sys
 from urllib.parse import urlparse
 d = json.load(open(f"install/modules/{os.environ['MODULE']}.json", encoding="utf-8"))
@@ -48,5 +50,5 @@ DEVICE="${DEVICE:-$DESC_DEVICE}"
 PORT="${PORT:-$DESC_PORT}"
 
 echo "런타임 ${MODULE} — 장치 ${DEVICE:-(없음)} · 포트 ${PORT}"
-PYTHONPATH=runtime/src exec python3 -m hangeul_runtime.server \
+PYTHONPATH=runtime/src exec "$PYTHON" -m hangeul_runtime.server \
   --module "$MODULE" --device "$DEVICE" --port "$PORT" "$@"

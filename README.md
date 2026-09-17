@@ -75,6 +75,11 @@ docs/                    공개판 문서
 
 ## 설치
 
+Ubuntu/WSL에서는 Python 3, pip, venv가 필요합니다 (`python3-venv` 패키지).
+설치 스크립트는 프로젝트의 `.venv`에 의존성과 테스트 도구를 설치합니다.
+실물 로봇 패키지 설치가 실패하면 시뮬레이션만 사용할 수 있으며 이유가 표시됩니다.
+
+
 ```bash
 ./install/install.sh
 ```
@@ -99,6 +104,14 @@ http://127.0.0.1:8099
 ./install/run_runtime.sh arm_sim --simulate
 ```
 
+위 명령은 별도 터미널에서 실행합니다. 콘솔의 **추가**에서 `core_a`,
+`arm_sim`, `hand_sim`으로 로봇을 등록하면 현재 위치 읽기, 미세 이동, 절대 이동을
+실물 없이 시험할 수 있습니다. 가상 팔의 기본 관절 범위는 0~4095 ticks입니다.
+`--simulate`는 실물 부품을 지정해도 USB 장치를 열지 않습니다.
+
+`run.sh`는 콘솔만 시작합니다. 실물 제어에는 아래 런타임도 별도로 실행해야 합니다.
+같은 포트(기본 8601)를 사용하는 시뮬레이션 팔과 OMX 런타임을 동시에 실행하지 마세요.
+
 실물 런타임 예:
 
 ```bash
@@ -116,14 +129,23 @@ DEVICE=/dev/ttyACM1 ./install/run_runtime.sh arm_mycobot
 ## 테스트
 
 ```bash
-python3 -m pytest -q
+.venv/bin/python -m pytest -q
 ```
 
 현재 공개 폴더 기준 확인:
 
 ```text
-79 passed, 16 skipped
+110 passed, 18 skipped
 ```
+
+## 공개판에서 사용하지 않는 기능
+
+물체·색상 추적과 팔 따라가기는 제공하지 않습니다. 관련 상태 조회는 미지원으로
+응답하고, 화면은 해당 기능을 자동 조회하지 않습니다. `eye_sim`은 영상 생성기가
+아닌 카메라 인터페이스 예제이며 `read_frame()`은 `None`을 반환합니다.
+
+`./stop.sh`와 `./restart.sh`는 같은 프로젝트 경로에서 실행된 서버만 종료합니다.
+이 스크립트는 Linux/WSL용입니다.
 
 ## 안전 고지
 

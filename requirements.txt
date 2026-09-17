@@ -1,8 +1,5 @@
-# 한글 로봇 — 콘솔과 런타임이 필요로 하는 것
+# Console and simulation runtime
 fastapi>=0.110
 uvicorn>=0.27
-
-# 실물 로봇 (없어도 콘솔은 뜬다. 런타임을 --simulate로 띄우면 된다)
-dynamixel-sdk>=3.7    ; extra == "robot"     # OpenManipulator-X
-pymycobot>=3.5        ; extra == "robot"     # MyCobot 280
-pyserial>=3.5         ; extra == "robot"
+# Physical hardware: pip install -r requirements-robot.txt
+# Tests: pip install -r requirements-test.txt

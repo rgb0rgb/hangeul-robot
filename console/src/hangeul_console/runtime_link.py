@@ -200,7 +200,8 @@ class RuntimeLink:
         """현재 관절값 읽기 — 읽기 전용."""
         result = self._call(instance, "/api/read-pose")
         if not result["ok"]:
-            return {"success": False, "reason": result.get("reason"), "present": {}}
+            return {"success": False, "reason": result.get("reason"),
+                    "error": result.get("reason"), "present": {}}
         return result["data"]
 
     def forward(self, instance, path: str, payload: dict | None,
@@ -212,9 +213,12 @@ class RuntimeLink:
         if not result["ok"]:
             blocked = result.get("data") or {}
             if blocked:
-                return blocked
+                return {**blocked, "success": False,
+                        "error": blocked.get("error") or blocked.get("reason")
+                        or blocked.get("blocked_reasons") or result.get("reason")}
+            reason = result.get("reason") or "런타임 응답이 없습니다"
             return {"success": False, "verdict": "RUNTIME_UNREACHABLE",
-                    "reason": result.get("reason")}
+                    "reason": reason, "error": reason}
         return result["data"]
 
     def stop(self, instance) -> dict[str, Any]:

@@ -1631,89 +1631,30 @@ def vision_endpoints(payload: dict[str, Any] = Body(default_factory=dict)) -> di
     return runtime.forward(instance, "/api/server-camera-frame", None, method="GET")
 
 
+def _tracking_unavailable() -> dict:
+    return {"success": False, "ok": True, "available": False,
+            "running": False, "process_running": False, "tracking": False,
+            "follow": "unavailable", "event": None, "last": None,
+            "detected_target_count": 0, "reason_code": "not_implemented",
+            "error": "공개판에서는 물체·색상 추적을 제공하지 않습니다",
+            "actual_hardware_called": False}
+
+
 @app.get("/api/color-tracking-status")
-def color_tracking_status() -> dict:
-    """색상 추적은 아직 옮겨 오지 않았다. 화면이 읽는 이름만 지켜 준다."""
-    instance = _selected()
-    refusal = _require_module(instance, "eye", "눈(카메라)")
-    idle = {"available": False, "process_running": False, "running": False,
-            "tracking": False, "event": "", "detected_target_count": 0}
-    if refusal:
-        return {**idle, **refusal}
-    return {**idle, "ok": True, "note": "색상 추적은 아직 없습니다"}
+@app.get("/api/target-tracking-status")
+def target_tracking_status() -> dict:
+    return _tracking_unavailable()
 
 
 @app.post("/api/color-tracking/start")
 @app.post("/api/color-tracking/stop")
-def color_tracking(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
-    return {"success": False, "error": "색상 추적은 아직 없습니다",
-            "reason_code": "not_implemented"}
-
-
-# ── 목표물 추적 (C12: 눈이 있어야 한다) ─────────────────────────
-# 콘솔은 추적을 돌리지 않는다. 카메라도 팔도 런타임의 것이고, 안전 판정도
-# 거기 있다. 여기서는 눈이 꽂혀 있는지만 보고 넘긴다.
-@app.get("/api/target-tracking-status")
-def target_tracking_status() -> dict:
-    instance = _selected()
-    refusal = _require_module(instance, "eye", "눈(카메라)")
-    # 화면이 읽는 이름은 **거절할 때도** 전부 있어야 한다. 없으면 화면이
-    # undefined를 읽고 그 자리만 조용히 빈다(화면 계약 시험이 이걸 잡는다).
-    idle = {"available": False, "running": False, "tracking": False,
-            "follow": "unavailable", "follow_reason": "", "algorithm": "",
-            "last": None, "last_move": None, "error": "", "event": ""}
-    if refusal:
-        return {**idle, **refusal}
-    answer = runtime.forward(instance, "/api/target-tracking-status", None, method="GET")
-    # 화면이 오래 쓰던 이름(tracking)을 계속 준다 — 런타임은 state로 말한다
-    last = answer.get("last") or {}
-    answer["tracking"] = bool(last.get("tracking_ok"))
-    return {**idle, **answer}
-
-
 @app.post("/api/target-tracking/start")
-def target_tracking_start(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
-    """**팔을 움직일지는 사람이 여기서 고른다.** 기본은 보기만 하는 것이다."""
-    instance = _selected()
-    refusal = _require_module(instance, "eye", "눈(카메라)")
-    if refusal:
-        return refusal
-    follow = bool(payload.get("follow", False))
-    if follow and not instance.of_class("arm"):
-        return {"success": False, "error": "이 로봇에는 팔이 없어 따라갈 수 없습니다",
-                "reason_code": "module_not_installed"}
-    answer = runtime.forward(instance, "/api/target-tracking/start", {"follow": follow})
-    if answer.get("success"):
-        _log(f"{instance.display_name}: 목표물 추적 시작"
-             + (" (팔이 따라갑니다)" if follow else " (보기만 합니다)"),
-             "s-log-err" if follow else "s-log-info")
-    else:
-        _log(f"{instance.display_name}: 목표물 추적 시작 실패 — "
-             f"{answer.get('error') or answer.get('reason') or '이유 불명'}", "s-log-err")
-    return answer
-
-
 @app.post("/api/target-tracking/stop")
-def target_tracking_stop(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
-    instance = _selected()
-    refusal = _require_module(instance, "eye", "눈(카메라)")
-    if refusal:
-        return refusal
-    answer = runtime.forward(instance, "/api/target-tracking/stop", {})
-    _log(f"{instance.display_name}: 목표물 추적 중지 — 팔을 그 자리에 세웠습니다", "s-log-info")
-    return answer
-
-
 @app.post("/api/target-tracking/select")
 @app.post("/api/target-tracking/clear")
 @app.post("/api/target-tracking/follow")
-def target_tracking_target(request: Request,
-                           payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
-    instance = _selected()
-    refusal = _require_module(instance, "eye", "눈(카메라)")
-    if refusal:
-        return refusal
-    return runtime.forward(instance, request.url.path, payload)
+def target_tracking_start(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    return _tracking_unavailable()
 
 
 @app.get("/api/camera-stream")

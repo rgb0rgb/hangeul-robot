@@ -35,6 +35,7 @@ WSL 터미널에서 직접 띄우는 것도 같다.
     usbipd list                      REM 팔의 BUSID를 찾는다 (OMX는 0403:6014 FTDI)
     usbipd attach --wsl --busid 1-5  REM 그 BUSID를 WSL에 붙인다
 
-붙이면 WSL 쪽에 `/dev/ttyUSB0`이 생기고, 그 다음 `run.sh`가 런타임까지 띄운다.
+붙이면 WSL 쪽에 `/dev/ttyUSB0`이 생기고, 그 다음 콘솔은 `./run.sh`, OMX 런타임은 별도 터미널에서
+`./install/run_runtime.sh arm_omx`로 실행한다.
 **붙이는 동안 그 장치는 윈도우에서 사라진다** — 같은 팔을 윈도우 네이티브 프로그램
 (Beom 등)에서 쓰고 있다면 한쪽만 가질 수 있다.

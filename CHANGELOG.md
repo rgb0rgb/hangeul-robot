@@ -1,3 +1,13 @@
+# 0.2.1 — Public runtime fixes (2026-09-17)
+
+- Make the documented simulation command instantiate a virtual arm and hand.
+- Preserve ESTOP and configured range checks; mark simulated moves as non-hardware.
+- Return explicit unsupported results for excluded tracking APIs and stop their UI polling.
+- Show runtime connection errors in motion controls.
+- Install runtime and test dependencies in a project-local virtual environment.
+- Limit stop/restart to server processes in the current checkout.
+- Add API and UI regression coverage for these paths.
+
 # Changelog
 
 ## 0.2.0-public-real

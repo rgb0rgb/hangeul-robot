@@ -2899,6 +2899,22 @@ function readCurrentPose() {
     });
 }
 
+function motionFailureReason(data) {
+  return data.error || (data.blocked_reasons && data.blocked_reasons.length
+    ? data.blocked_reasons.join('; ') : '') || data.reason || data.verdict ||
+    (lang === 'ko' ? '이동 결과를 확인하지 못했습니다' : 'Could not verify the move result');
+}
+
+function motionFailureMessage(data, jointId, target) {
+  var reason = motionFailureReason(data);
+  if (!data.present || data.present[String(jointId)] === undefined || target == null) {
+    return (lang === 'ko' ? '이동 확인 실패: ' : 'Move verification failed: ') + reason;
+  }
+  var actual = formatUiValue(jointId, data.present[String(jointId)]);
+  return (lang === 'ko' ? '목표 미도달: 목표 ' : 'Target not reached: target ') +
+    formatUiValue(jointId, target) + (lang === 'ko' ? ', 실제 ' : ', actual ') + actual + ' · ' + reason;
+}
+
 function jogJoint(jointId, deltaTicks) {
   var deltaUi = rawToUiValue(jointId, deltaTicks);
   var deltaUnit = isMyCobotUi() ? (isGripperJoint(jointId) ? '%' : '°') : 'ticks';
@@ -2932,7 +2948,7 @@ function jogJoint(jointId, deltaTicks) {
       } else {
         var actual = data.present && data.present[String(jointId)] !== undefined
           ? formatUiValue(jointId, data.present[String(jointId)]) : '-';
-        slog((lang === 'ko' ? '목표 미도달: 목표 ' + formatUiValue(jointId, data.target) + ', 실제 ' + actual + ' · ' + (data.error || data.blocked_reasons || '') : 'Target not reached: target ' + formatUiValue(jointId, data.target) + ', actual ' + actual + ' · ' + (data.error || data.blocked_reasons || '')), 's-log-err');
+        slog(motionFailureMessage(data, jointId, data.target), 's-log-err');
       }
     })
     .catch(function(err) {
@@ -3113,7 +3129,7 @@ function jogJointOnce(jointId, deltaTicks) {
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (!data.success) {
-        throw new Error(data.error || data.blocked_reasons || 'jog failed');
+        throw new Error(motionFailureReason(data));
       }
       if (data.present) {
         for (var jid in data.present) {
@@ -3465,8 +3481,8 @@ function moveJointTo(jointId) {
       } else {
         var actual = data.present && data.present[String(jointId)] !== undefined
           ? formatUiValue(jointId, data.present[String(jointId)]) : '-';
-        slog((lang === 'ko' ? '목표 미도달: 목표 ' + formatUiValue(jointId, targetTicks) + ', 실제 ' + actual + ' · ' + (data.error || data.blocked_reasons || '') : 'Target not reached: target ' + formatUiValue(jointId, targetTicks) + ', actual ' + actual + ' · ' + (data.error || data.blocked_reasons || '')), 's-log-err');
-        alertOrStyled((lang === 'ko' ? '이동 실패: ' + (data.error || '') : 'Failed: ' + (data.error || '')));
+        slog(motionFailureMessage(data, jointId, targetTicks), 's-log-err');
+        alertOrStyled((lang === 'ko' ? '이동 실패: ' + motionFailureReason(data) : 'Failed: ' + motionFailureReason(data)));
       }
     })
     .catch(function(err) {
@@ -5137,28 +5153,8 @@ window.switchVisionWorkTab = function(tabName) {
 var _colorTrackingStatusTimer = null;
 
 function refreshColorTrackingStatus() {
-  fetch(BACKEND + '/api/color-tracking-status', { cache: 'no-store' })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      var pill = document.getElementById('color-tracking-pill');
-      var metaEl = document.getElementById('color-tracking-meta');
-      if (!pill || !metaEl) return;
-      pill.className = 's-tracking-pill';
-      if (!d.available) {
-        pill.textContent = lang === 'ko' ? '대기' : 'Idle';
-        metaEl.textContent = lang === 'ko' ? '색상 추적 실행 기록 없음' : 'No color tracking event yet';
-        if (_colorTrackingStatusTimer) { clearInterval(_colorTrackingStatusTimer); _colorTrackingStatusTimer = null; }
-        return;
-      }
-      var running = !!d.process_running;
-      var count = d.detected_target_count;
-      pill.textContent = running ? (lang === 'ko' ? '실행 중' : 'Running') : (lang === 'ko' ? '중지됨' : 'Stopped');
-      pill.className += running ? ' active' : ' lost';
-      metaEl.textContent = (lang === 'ko' ? '감지된 빨간 타겟: ' : 'Detected red targets: ') + (count === null || count === undefined ? '-' : count)
-        + (d.verdict ? ' · ' + d.verdict : '');
-      if (!running && _colorTrackingStatusTimer) { clearInterval(_colorTrackingStatusTimer); _colorTrackingStatusTimer = null; }
-    })
-    .catch(function() {});
+  // Tracking is not included in the public release.
+  return;
 }
 
 function startColorTracking() {
@@ -5187,9 +5183,8 @@ function stopColorTracking() {
 }
 
 function startColorTrackingStatusPolling() {
-  if (_colorTrackingStatusTimer) clearInterval(_colorTrackingStatusTimer);
-  _colorTrackingStatusTimer = setInterval(refreshColorTrackingStatus, 1000);
-  refreshColorTrackingStatus();
+  // Tracking is not included in the public release.
+  return;
 }
 
 function startWebcam() {
@@ -5481,78 +5476,13 @@ function _installTrackDrag() {
 }
 
 function _trackPoll() {
-  if (_trackTimer) clearInterval(_trackTimer);
-  _trackTimer = setInterval(refreshTargetTracking, 1000);
-  refreshTargetTracking();
+  // Tracking is not included in the public release.
+  return;
 }
 
 function refreshTargetTracking() {
-  fetch(BACKEND + '/api/target-tracking-status', { cache: 'no-store' })
-    .then(function (r) { return r.json(); })
-    .then(function (d) {
-      var section = _trackEl('track-section');
-      if (!section) return;
-      // 눈이 없는 로봇에서는 이 칸이 아예 없다. 못 하는 일을 버튼으로 보여주지 않는다.
-      if (d.reason_code === 'module_not_installed') { section.style.display = 'none'; return; }
-      section.style.display = 'block';
-
-      _trackRunning = !!d.running;
-      // 새로고침으로 들어와도 이미 도는 추적에 영상이 붙는다
-      if (d.running) _trackAttachView(); else _trackDetachView();
-
-      var pill = _trackEl('track-pill');
-      var last = d.last || {};
-      var label = d.running
-        ? ({ tracking: '추적 중', reacquired: '다시 찾음', lost: '놓침', idle: '목표 없음' }[last.state] || '실행 중')
-        : '대기';
-      pill.textContent = label;
-      pill.style.color = d.running ? (last.tracking_ok ? '#4ade80' : '#fbbf24') : '#94a3b8';
-
-      var note = _trackEl('track-follow-note');
-      var box = _trackEl('track-follow');
-      if (d.follow === 'unavailable') {
-        note.textContent = lang === 'ko'
-          ? '이 팔은 아직 따라가기 설정이 없습니다 — 어느 관절이 좌우/위아래를 맡는지 실물로 재지 않았습니다. 보기만 할 수 있습니다.'
-          : 'This arm has no follow mapping yet (not measured on hardware). Observation only.';
-        if (box) { box.checked = false; box.disabled = true; }
-      } else if (d.follow === 'blocked') {
-        note.textContent = (lang === 'ko' ? '따라가기가 안전 판정에 막혀 멈췄습니다: ' : 'Follow blocked: ') + (d.follow_reason || '');
-      } else {
-        note.textContent = '';
-        if (box) box.disabled = false;
-      }
-
-      var lines = [];
-      // **팔이 안 움직이는 이유를 화면이 먼저 말한다.** 목표를 안 골랐거나
-      // 따라가기가 꺼져 있으면 팔은 가만히 있는 것이 맞다 — 고장이 아니다.
-      if (d.running && last.state === 'idle') {
-        lines.push(lang === 'ko'
-          ? '① 화면 위에서 목표물을 마우스로 끌어 고르세요 (아직 목표 없음)'
-          : '1) Drag on the view to pick a target (no target yet)');
-      }
-      if (d.running && d.follow === 'off') {
-        lines.push(lang === 'ko'
-          ? '② 팔을 움직이려면 위의 \'팔이 목표물을 따라간다\'를 켜세요 (지금은 보기만 함)'
-          : "2) Tick 'Let the arm follow the target' to move the arm (observing only)");
-      }
-      if (d.algorithm) lines.push((lang === 'ko' ? '추적기: ' : 'Tracker: ') + d.algorithm);
-      if (last.center_pct) lines.push((lang === 'ko' ? '목표 위치: ' : 'Target: ')
-        + last.center_pct[0].toFixed(1) + '% / ' + last.center_pct[1].toFixed(1) + '%');
-      if (d.last_move && d.last_move.plan) {
-        var p = d.last_move.plan;
-        lines.push((lang === 'ko' ? '마지막 이동: ' : 'Last move: ')
-          + JSON.stringify(p.delta_deg) + '° ' + (d.last_move.answer.success ? 'OK' : (d.last_move.answer.verdict || '')));
-      }
-      if (d.error) lines.push('⚠️ ' + d.error);
-      // 런타임이 보낸 글(오류 문구·판정 이름)을 화면에 마크업으로 붙이지 않는다.
-      var meta = _trackEl('track-meta');
-      meta.textContent = '';
-      lines.forEach(function (line, i) {
-        if (i) meta.appendChild(document.createElement('br'));
-        meta.appendChild(document.createTextNode(line));
-      });
-    })
-    .catch(function () { /* 콘솔이 잠깐 안 잡히는 것으로 화면을 흔들지 않는다 */ });
+  // Tracking is not included in the public release.
+  return;
 }
 
 // ─── 초기화 ──────────────────────────────────────────────────────

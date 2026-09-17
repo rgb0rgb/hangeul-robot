@@ -9,6 +9,7 @@ class SimulatedArmAdapter(RobotArmAdapter):
     """Public demo adapter. It never opens physical hardware."""
 
     robot_model = "simulated_arm"
+    simulated = True
 
     def __init__(
         self,
@@ -45,6 +46,8 @@ class SimulatedArmAdapter(RobotArmAdapter):
         return dict(self._positions)
 
     def clamp(self, joint_name: str, target: int) -> int:
+        if str(joint_name) not in self._positions or str(joint_name) in self.excluded_joints:
+            raise ValueError(f"Unknown or disabled simulated joint: {joint_name}")
         return int(target)
 
     def move_joints(
@@ -58,6 +61,8 @@ class SimulatedArmAdapter(RobotArmAdapter):
         temperature_limits_c: dict[str, float] | None = None,
         velocity_per_joint: dict[str, int] | None = None,
     ) -> dict[str, Any]:
+        for joint, target in targets.items():
+            self.clamp(str(joint), target)
         for joint, target in targets.items():
             if str(joint) not in self.excluded_joints:
                 self._positions[str(joint)] = int(target)

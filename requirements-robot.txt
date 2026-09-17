@@ -1,0 +1,4 @@
+-r requirements.txt
+dynamixel-sdk>=3.7
+pymycobot>=3.5
+pyserial>=3.5

@@ -138,7 +138,7 @@ def _ensure_link() -> None:
     붙잡고 있으면 읽기가 응답 없이 오래 매달린다 — 화면에서는 그냥
     '멈춘 것'으로 보인다. 전원 재기동이 잦은 로봇에서 이게 곧 고장처럼 보였다.
     """
-    if CONFIG.get("adapter") is None:
+    if CONFIG.get("adapter") is None or getattr(CONFIG["adapter"], "simulated", False):
         return
     stamp = _device_stamp()
     if stamp == CONFIG.get("device_stamp"):
@@ -444,7 +444,7 @@ def _recover_hardware(*, force: bool = False, may_reopen_link: bool = False) -> 
 def estop_status() -> dict:
     """콘솔이 살아있음을 확인하는 자리이기도 하다. 부작용 없는 읽기."""
     return {"ok": True, **state.to_dict(), "module": CONFIG["module"],
-            "device": CONFIG["device"], "simulated": CONFIG["adapter"] is None,
+            "device": CONFIG["device"], "simulated": CONFIG["adapter"] is None or bool(getattr(CONFIG["adapter"], "simulated", False)),
             # 시늉이면 **왜 시늉인지** 함께 준다. 조용한 시늉은 거짓말에 가깝다
             "simulate_reason": CONFIG.get("simulate_reason") or "",
             # 옛 노드와 같은 이름도 함께 준다 — 화면이 둘 다 읽는다
@@ -623,237 +623,35 @@ def _eye_factory():
     return lambda: _make_adapter(cls, device, descriptor)
 
 
-def _joints_parked_outside_range() -> dict[str, Any] | None:
-    """따라가기가 쓸 관절이 **이미 안전 범위 밖에 서 있는가.**
-
-    이걸 안 보면 이런 일이 생긴다(2026-08-21 실측): 어깨가 하한보다 10틱 아래에
-    처져 멈춰 있는데, 따라가기는 늘 아래로 가려 하니 **켜자마자 첫 걸음에서
-    막힌다.** 로그에는 "이동 차단"만 남고 화면에는 아무 일도 안 일어난 것처럼
-    보인다. 사람은 기능이 고장 났다고 생각한다.
-
-    범위 밖에 서 있는 것 자체는 흔한 일이다 — 무거운 관절은 목표에 못 미치고
-    부하로 조금 처진다. 그러니 막되, **어느 관절이 어디에 있고 어느 쪽으로
-    움직여야 하는지**까지 말한다.
-    """
-    from .vision.arm_follow import FollowConfig, FollowNotConfigured
-
-    try:
-        config = FollowConfig.from_descriptor(CONFIG["descriptor"])
-    except FollowNotConfigured:
-        return None
-    if CONFIG.get("adapter") is None:
-        return None
-    try:
-        present = _display_pose(_read_present(fresh=True))
-    except Exception:                              # noqa: BLE001 — 못 읽으면 여기서 막지 않는다
-        return None
-
-    _refresh_files()
-    stuck = []
-    for joint in (config.horizontal_joint, config.vertical_joint):
-        band = (CONFIG["limits"] or {}).get(str(joint))
-        value = present.get(str(joint))
-        if not band or value is None:
-            continue
-        if value < band[0]:
-            stuck.append(f"관절 {joint}이 {value}로 허용 범위({band[0]}~{band[1]})보다 "
-                         f"{band[0] - value}틱 아래에 있습니다 — 위쪽으로 올려 주세요")
-        elif value > band[1]:
-            stuck.append(f"관절 {joint}이 {value}로 허용 범위({band[0]}~{band[1]})보다 "
-                         f"{value - band[1]}틱 위에 있습니다 — 아래쪽으로 내려 주세요")
-    if not stuck:
-        return None
-    return {
-        "error": "지금 자세가 안전 범위 밖이라 따라갈 수 없습니다. "
-                 + " / ".join(stuck)
-                 + ". 미세 이동으로 범위 안으로 옮긴 뒤 다시 켜세요",
-        "blocked_reasons": stuck,
-        "present": present,
-    }
-
-
-def _follow_move(deltas: dict[str, int], velocity: int, label: str) -> dict[str, Any]:
-    """추적이 팔로 나가는 **유일한 문.** 사람이 미세 이동을 누를 때와 같은 문이다.
-
-    관절 두 개를 함께 옮기므로 /api/jog를 두 번 부르지 않는다 — 그러면 좌우가
-    먼저 가고 위아래가 나중에 가서 팔이 계단처럼 움직인다.
-    """
-    if CONFIG.get("adapter") is None:
-        return _no_hardware()
-    first = next(iter(deltas), "")
-    try:
-        # 사람이 누르는 미세 이동은 한 번뿐이라 두 번 읽어 확인할 값이 있다.
-        # 추적은 초당 여러 번 이어지는 되먹임이고, 한 걸음이 기술서의 각으로
-        # 잘려 있으며, 어긋나면 다음 프레임이 곧바로 되돌린다. 여기서는 한 번만
-        # 읽는다 — 두 번 읽기가 제어 주기의 4분의 1을 먹고 있었다(실측).
-        present = _display_pose(_read_present(fresh=True))
-    except HardwareConnectionLostError as exc:
-        state.latch_disconnect(str(exc))
-        return {"success": False, "verdict": "DISCONNECTED", "error": str(exc),
-                "blocked_reasons": [str(exc)], "actual_hardware_called": False}
-    except UnsteadyReading as exc:
-        return {"success": False, "verdict": "BLOCKED_UNSTEADY_READING",
-                "blocked_reasons": [str(exc)], "error": str(exc),
-                "actual_hardware_called": False}
-    except Exception as exc:                      # noqa: BLE001
-        return {"success": False, "verdict": "BLOCKED_READ_FAILED",
-                "blocked_reasons": [f"지금 위치를 읽지 못했습니다: {exc}"],
-                "error": str(exc), "actual_hardware_called": False}
-
-    missing = [j for j in deltas if j not in present]
-    if missing:
-        return {"success": False, "verdict": "BLOCKED_BAD_TARGET",
-                "blocked_reasons": [f"이 팔에 없는 관절입니다: {', '.join(missing)}"],
-                "error": "관절 없음", "actual_hardware_called": False}
-    targets = {j: _to_display(j, int(present[j]) + int(d)) for j, d in deltas.items()}
-    try:
-        speed = _check_all(targets, velocity)
-    except safety.SafetyBlocked as exc:
-        answer = _blocked(exc)
-        answer.update({"present": present, "targets": targets})
-        return answer
-    return _run(targets, speed, label, "MOVED", read_back=False,
-                min_gap=CONTROL_LOOP_GAP_SEC)
+def _tracking_unavailable() -> dict:
+    return {"success": False, "ok": True, "available": False,
+            "running": False, "process_running": False, "tracking": False,
+            "follow": "unavailable", "event": None, "last": None,
+            "reason_code": "not_implemented",
+            "error": "공개판에서는 물체·색상 추적을 제공하지 않습니다",
+            "actual_hardware_called": False}
 
 
 @app.get("/api/target-tracking-status")
+@app.get("/api/color-tracking-status")
 def target_tracking_status() -> dict:
-    session = _TRACKING["session"]
-    if session is None:
-        return {"success": True, "running": False, "available": False,
-                "eye": CONFIG.get("eye"), "eye_refusal": _eye_refusal(),
-                "follow": _follow_readiness(),
-                "message": "추적을 실행한 적이 없습니다"}
-    answer = session.status()
-    answer["eye"] = CONFIG.get("eye")
-    answer["eye_refusal"] = _eye_refusal()
-    return answer
-
-
-def _follow_readiness() -> str:
-    """이 팔이 따라갈 수 있는가. 시작하기 전에도 화면이 알아야 한다."""
-    from .vision.arm_follow import FollowConfig, FollowNotConfigured
-
-    try:
-        FollowConfig.from_descriptor(CONFIG["descriptor"])
-    except FollowNotConfigured:
-        return "unavailable"
-    return "ready"
+    return _tracking_unavailable()
 
 
 @app.post("/api/target-tracking/start")
-def target_tracking_start(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
-    from .vision.session import TrackingSession
-
-    if CONFIG.get("eye") is None:
-        return {"success": False, "error": _eye_refusal() or "눈(카메라) 부품이 없습니다"}
-    session = _TRACKING["session"]
-    if session is not None and session.running:
-        return {"success": True, "already_running": True, "follow": session.follow_state}
-
-    # 따라가기는 **사람이 켜야 켜진다.** 기본은 보기만 하는 것이다.
-    follow = bool(payload.get("follow", False))
-    if follow and state.estop_latched:
-        return {"success": False, "verdict": "BLOCKED_ESTOP",
-                "error": f"긴급 정지가 걸려 있습니다 ({state.estop_reason})"}
-    if follow:
-        parked = _joints_parked_outside_range()
-        if parked:
-            return {"success": False, "verdict": "BLOCKED_OUT_OF_RANGE", **parked}
-    root = Path(__file__).resolve().parents[3]
-    try:
-        camera_factory = _eye_factory()
-    except ValueError as exc:
-        # 기술서가 어댑터를 잘못 밝혔다. 500으로 떨어뜨리면 화면에는 "접속 끊김"만
-        # 남고 진짜 이유가 사라진다 — 팔에서 배운 것과 같다.
-        return {"success": False, "error": str(exc), "reason_code": "eye_adapter_missing"}
-    session = TrackingSession(
-        camera_factory=camera_factory,
-        descriptor=CONFIG["descriptor"],
-        eye_descriptor=CONFIG.get("eye_descriptor") or {},
-        move_fn=_follow_move,
-        # 그 자리에 **세우기만** 한다. /api/pause-hold를 부르면 일시정지가
-        # 걸려 다른 동작까지 전부 막힌다 — 추적만 끄려던 사람에게는 뜻밖의
-        # 일이다. 급할 때 통째로 잠그는 것은 긴급 정지의 몫이다.
-        hold_fn=lambda: {"held": _stop_hardware()},
-        follow_enabled=follow,
-        log_path=root / "data" / f"tracking_{CONFIG['module']}.jsonl",
-    )
-    answer = session.start()
-    if answer.get("success"):
-        _TRACKING["session"] = session
-        state.note(f"목표물 추적 시작 (따라가기 {'켬' if follow else '끔'})")
-    return answer
-
-
 @app.post("/api/target-tracking/stop")
-def target_tracking_stop(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
-    session = _TRACKING["session"]
-    if session is None:
-        return {"success": True, "running": False}
-    answer = session.stop()
-    state.note("목표물 추적 중지 — 팔을 그 자리에 세웠습니다")
-    return answer
-
-
 @app.post("/api/target-tracking/select")
-def target_tracking_select(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
-    """화면에서 끈 상자. 좌표는 **프레임 픽셀**이다 — 브라우저가 환산해서 보낸다."""
-    session = _TRACKING["session"]
-    if session is None:
-        return {"success": False, "error": "추적이 돌고 있지 않습니다"}
-    bbox = payload.get("bbox") or []
-    if len(bbox) != 4:
-        return {"success": False, "error": "상자는 [x, y, 가로, 세로] 네 값입니다"}
-    return session.select(tuple(int(v) for v in bbox))       # type: ignore[arg-type]
-
-
-@app.post("/api/target-tracking/follow")
-def target_tracking_follow(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
-    """돌아가는 중에 따라가기를 켜고 끈다. 켜는 것은 실물이 움직이기 시작하는 일이다."""
-    session = _TRACKING["session"]
-    if session is None or not session.running:
-        return {"success": False, "error": "추적이 돌고 있지 않습니다"}
-    on = bool(payload.get("on"))
-    if on and state.estop_latched:
-        return {"success": False, "verdict": "BLOCKED_ESTOP",
-                "error": f"긴급 정지가 걸려 있습니다 ({state.estop_reason})"}
-    if on:
-        parked = _joints_parked_outside_range()
-        if parked:
-            return {"success": False, "verdict": "BLOCKED_OUT_OF_RANGE", **parked}
-    answer = session.set_follow(on)
-    state.note(f"목표물 추적 따라가기 {'켬' if on else '끔'}", "stop" if on else "info")
-    return answer
-
-
 @app.post("/api/target-tracking/clear")
-def target_tracking_clear(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
-    session = _TRACKING["session"]
-    if session is None:
-        return {"success": True}
-    return session.clear_target()
+@app.post("/api/target-tracking/follow")
+@app.post("/api/color-tracking/start")
+@app.post("/api/color-tracking/stop")
+def target_tracking_start(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    return _tracking_unavailable()
 
 
 @app.get("/api/camera-stream")
 def camera_stream():
-    """추적 화면을 계속 보낸다(MJPEG). 브라우저의 <img> 하나면 받는다."""
-    from fastapi.responses import StreamingResponse
-
-    def frames():
-        while True:
-            session = _TRACKING["session"]
-            if session is None or not session.running:
-                break
-            jpeg = session.frame_jpeg()
-            if jpeg is not None:
-                yield (b"--frame\r\nContent-Type: image/jpeg\r\n"
-                       b"Content-Length: " + str(len(jpeg)).encode() + b"\r\n\r\n"
-                       + jpeg + b"\r\n")
-            time.sleep(0.04)
-
-    return StreamingResponse(frames(),
-                             media_type="multipart/x-mixed-replace; boundary=frame")
+    return _tracking_unavailable()
 
 
 # ── 움직임 ──────────────────────────────────────────────────────
@@ -904,6 +702,7 @@ def _auto_recover_allowed() -> bool:
 def _run(targets: dict[str, Any], velocity: int, label: str, verdict: str,
          *, _retried: bool = False, read_back: bool = True,
          min_gap: float | None = None) -> dict:
+    physical = not bool(getattr(CONFIG.get("adapter"), "simulated", False))
     sent: dict[str, Any] = {}
     try:
         sent = _send(targets, velocity, label, min_gap=min_gap)
@@ -911,12 +710,12 @@ def _run(targets: dict[str, Any], velocity: int, label: str, verdict: str,
         state.latch_estop(str(exc))
         return {"success": False, "verdict": "BLOCKED_IN_FLIGHT_SAFETY",
                 "blocked_reasons": [str(exc)], "error": str(exc),
-                "actual_hardware_called": True}
+                "actual_hardware_called": physical, "simulated": not physical}
     except HardwareConnectionLostError as exc:
         state.latch_disconnect(str(exc))
         return {"success": False, "verdict": "DISCONNECTED",
                 "blocked_reasons": [str(exc)], "error": str(exc),
-                "actual_hardware_called": True}
+                "actual_hardware_called": physical, "simulated": not physical}
     except (ValueError, KeyError) as exc:
         return {"success": False, "verdict": "BLOCKED_BAD_TARGET",
                 "blocked_reasons": [str(exc)], "error": str(exc),
@@ -931,7 +730,7 @@ def _run(targets: dict[str, Any], velocity: int, label: str, verdict: str,
                 return {"success": False, "verdict": "BLOCKED_HARDWARE_REFUSED",
                         "blocked_reasons": [f"{exc}", "되살리기도 실패했습니다"],
                         "error": str(exc), "auto_recovery": report,
-                        "actual_hardware_called": True}
+                        "actual_hardware_called": physical, "simulated": not physical}
             answer = _run(targets, velocity, label, verdict, _retried=True)
             answer["auto_recovery"] = report
             return answer
@@ -940,7 +739,7 @@ def _run(targets: dict[str, Any], velocity: int, label: str, verdict: str,
         state.note(f"로봇이 거절함: {exc}", "stop")
         return {"success": False, "verdict": "BLOCKED_HARDWARE_REFUSED",
                 "blocked_reasons": [str(exc)], "error": str(exc),
-                "actual_hardware_called": True}
+                "actual_hardware_called": physical, "simulated": not physical}
     present = {}
     if read_back:
         # 움직인 뒤의 자세를 화면에 돌려주기 위한 읽기다. 시리얼 왕복 한 번
@@ -975,7 +774,7 @@ def _run(targets: dict[str, Any], velocity: int, label: str, verdict: str,
         state.note(f"목표에 {worst:.1f}도 못 미쳤지만 그 자리로 봅니다")
         _note_result(True)
         _recovery["failed_in_a_row"] = 0
-        return {"success": True, "verdict": verdict, "actual_hardware_called": True,
+        return {"success": True, "verdict": verdict, "actual_hardware_called": physical, "simulated": not physical,
                 "targets": targets, "present": present,
                 "warning": f"목표와 {worst:.1f}도 차이",
                 "errors_deg": arm.get("errors_deg", {})}
@@ -993,12 +792,12 @@ def _run(targets: dict[str, Any], velocity: int, label: str, verdict: str,
                        if _recovery["failed_in_a_row"] >= AUTO_RECOVER_STRIKES
                        else " '정지 해제'로 복구해 보고, 그래도 같으면 서보 연결을 확인하세요")],
                 "error": "목표 미도달",
-                "actual_hardware_called": True, "targets": targets, "present": present,
+                "actual_hardware_called": physical, "simulated": not physical, "targets": targets, "present": present,
                 "errors_deg": arm.get("errors_deg", {})}
 
     _note_result(True)
     _recovery["failed_in_a_row"] = 0
-    return {"success": True, "verdict": verdict, "actual_hardware_called": True,
+    return {"success": True, "verdict": verdict, "actual_hardware_called": physical, "simulated": not physical,
             "targets": targets, "present": present}
 
 
@@ -1256,8 +1055,16 @@ def build(module_id: str, device: str, limits_path: str = "", *,
         CONFIG["simulate_reason"] = reason
         state.note(f"시늉 모드 ({module_id}) — {reason}. 실물에 아무것도 보내지 않습니다")
 
-    if simulate:
-        _simulate("시늉 모드로 실행했습니다")
+    # Explicit simulation must never open the descriptor's physical adapter.
+    is_demo = CONFIG["descriptor"].get("runtime_adapter") == "simulated_arm_adapter:SimulatedArmAdapter"
+    if simulate or is_demo:
+        from .hardware.simulated_arm_adapter import SimulatedArmAdapter
+        descriptor = dict(CONFIG["descriptor"])
+        descriptor["hand"] = {"command": {"joint": CONFIG["hand_joint"]}}
+        CONFIG["adapter"] = SimulatedArmAdapter(descriptor=descriptor)
+        CONFIG["simulate_reason"] = "가상 팔 시뮬레이션 — 실물에 명령을 보내지 않습니다"
+        CONFIG["device_stamp"] = _device_stamp()
+        state.note(CONFIG["simulate_reason"])
         return
     if not device:
         _simulate("장치 이름이 없습니다")
