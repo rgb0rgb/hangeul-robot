@@ -28,7 +28,8 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import advisor, capability, configuration as cfg, task as task_mod, terms
+from . import (advisor, capability, configuration as cfg, module as module_mod,
+               task as task_mod, terms)
 from .device_lease import LeaseBook, LeaseError
 from .instance_store import InstanceStore
 from .registry import Registry, RegistryError
@@ -70,7 +71,8 @@ def _save_tasks(store: task_mod.TaskStore) -> None:
 
 def _capability_states(instance):
     health = runtime.health(instance)
-    return capabilities.visible(instance, health["capability_health"]), health
+    return (capabilities.visible(instance, health["capability_health"],
+                                health.get("parts")), health)
 
 
 # ── 콘솔 자체 상태 ──────────────────────────────────────────────
@@ -544,9 +546,11 @@ def robot_joints(instance_id: str = "") -> dict:
         "has_gripper": gripper is not None,
         "joint_tick_limits": bands,
         "value_units": value_units,
-        "excluded_joints": [int(j["id"]) for j in (instance.arm().joints if instance.arm() else [])
+        "excluded_joints": [module_mod.normalize_joint_id(j["id"])
+                            for j in (instance.arm().joints if instance.arm() else [])
                             if j.get("disabled")],
-        "id_policy": "numeric_dexter_joint_ids",
+        # 관절 식별자는 **숫자일 수도 이름일 수도 있다.**
+        "id_policy": "opaque_joint_ids",
         "supported_arm_joint_count": {"min": 3, "max": 8},
     }
 
@@ -631,7 +635,8 @@ def get_capabilities(instance_id: str = "") -> dict:
         "fingerprint": instance.fingerprint(),
         "modules": [m.to_dict() for m in instance.modules()],
         "capabilities": [c.to_dict() for c in
-                         capabilities.visible(instance, health["capability_health"])],
+                         capabilities.visible(instance, health["capability_health"],
+                                                 health.get("parts"))],
     }
 
 

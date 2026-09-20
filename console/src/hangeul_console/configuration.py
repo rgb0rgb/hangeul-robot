@@ -16,6 +16,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import module as module_mod
 from .module import MODULE_CLASSES, Module
 
 
@@ -75,26 +76,59 @@ class Configuration:
     shares_runtime_with: str = ""   # 같은 런타임을 보는 다른 로봇 (임대가 순서를 정한다)
 
     # ── 구성 지문 ────────────────────────────────────────────────
-    def fingerprint(self) -> str:
-        """부품·꽂힌 자리·교정값이 바뀌면 값이 바뀐다."""
-        parts = []
+    #
+    # 지문은 "가르친 값을 지금 몸에 그대로 써도 되는가"를 가른다. 그러려면
+    # **실행값의 의미를 바꾸는 것이 전부 들어가야 한다.**
+    #
+    # v1은 부품 ID·자리·관절 ID·command만 해시했다. 그래서 `unit.per_degree`를
+    # 바꿔도 지문이 같았다(2026-09-20 재현: same fingerprint: True). 단위가
+    # 달라지면 같은 숫자가 다른 각도를 뜻하는데도 옛 값이 그대로 실행됐다.
+    #
+    # v2는 `unit`과 교정을 넣는다. 그래서 **기존 지문은 전부 바뀐다.** ID 표기를
+    # 어떻게 정규화하든 마찬가지다. 그것을 숨기지 않고, v1 값을 따로 계산해
+    # "같은 부품인데 단위 기준만 달라진 것"을 알아볼 수 있게 둔다 — 그 판단은
+    # task 쪽 이행 정책이 한다(task.realization 참고).
+    FORMAT = "v2"
+
+    def _part_rows(self, *, legacy: bool) -> list[dict[str, Any]]:
+        rows = []
         for node in sorted(self.root.walk(), key=lambda n: n.module.module_id):
-            parts.append({
+            row = {
                 "id": node.module.module_id,
                 "slot": node.slot,
                 "joints": node.module.joint_ids(),
                 "command": node.module.command,
-            })
-        blob = json.dumps(parts, sort_keys=True, ensure_ascii=False)
+            }
+            if not legacy:
+                # 실행값의 뜻을 바꾸는 것들. 표시 이름처럼 뜻과 무관한 것은 넣지 않는다.
+                row["unit"] = node.module.unit or {}
+                row["limits"] = node.module.limits or {}
+            rows.append(row)
+        return rows
+
+    def fingerprint(self) -> str:
+        """부품·자리·관절·command·**단위·교정**이 바뀌면 값이 바뀐다."""
+        blob = json.dumps(self._part_rows(legacy=False), sort_keys=True, ensure_ascii=False)
+        return f"{self.FORMAT}:sha256:" + hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+    def legacy_fingerprint(self) -> str:
+        """v1이 계산하던 값. **이행 판단에만 쓴다.**
+
+        이 값이 같다는 것은 "부품 구성은 그대로인데 단위·교정 기준이 새로
+        지문에 들어왔다"는 뜻이다. 그것만으로 옛 실행값을 승인하지는 않는다 —
+        단위가 실제로 바뀌었는지는 따로 봐야 한다.
+        """
+        blob = json.dumps(self._part_rows(legacy=True), sort_keys=True, ensure_ascii=False)
         return "sha256:" + hashlib.sha256(blob.encode()).hexdigest()[:16]
 
     def part_fingerprint(self, module_class: str) -> str:
         """부품 한 종류만의 지문 — 손을 바꿨을 때 손 검증만 내리기 위함."""
         parts = [{"id": n.module.module_id, "command": n.module.command,
-                  "joints": n.module.joint_ids()}
+                  "joints": n.module.joint_ids(),
+                  "unit": n.module.unit or {}, "limits": n.module.limits or {}}
                  for n in self.root.walk() if n.module.module_class == module_class]
         blob = json.dumps(sorted(parts, key=lambda p: p["id"]), sort_keys=True, ensure_ascii=False)
-        return "sha256:" + hashlib.sha256(blob.encode()).hexdigest()[:12]
+        return f"{self.FORMAT}:sha256:" + hashlib.sha256(blob.encode()).hexdigest()[:12]
 
     # ── 부품 조회 ────────────────────────────────────────────────
     def modules(self) -> list[Module]:
@@ -174,7 +208,8 @@ class Configuration:
         view = []
         for index, joint in enumerate(arm.joints if arm else []):
             view.append({
-                "joint_id": int(joint["id"]),
+                # 식별자는 숫자일 수도 이름일 수도 있다(ROS 2는 이름을 쓴다)
+                "joint_id": module_mod.normalize_joint_id(joint["id"]),
                 "label": terms.joint_label(index, lang=lang),
                 "role": joint.get("role", "joint"),
                 "disabled": bool(joint.get("disabled")),

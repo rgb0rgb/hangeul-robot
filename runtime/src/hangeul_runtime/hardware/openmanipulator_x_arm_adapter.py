@@ -19,7 +19,10 @@ from typing import Any, Optional
 import serial
 from dynamixel_sdk import COMM_SUCCESS, GroupSyncWrite, PacketHandler, PortHandler
 
-from hangeul_runtime.abstraction.robot_arm_adapter import RobotArmAdapter
+from hangeul_runtime.abstraction.robot_arm_adapter import (
+    RobotArmAdapter,
+    effective_velocity,
+)
 from hangeul_runtime.hardware_errors import HardwareConnectionLostError, InFlightSafetyViolationError
 
 PROTOCOL_VERSION = 2.0
@@ -461,6 +464,35 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
             "components": [self.component(dxl_id) for dxl_id in EXPECTED_IDS],
         }
 
+    def attest_parts(self) -> dict[str, dict[str, Any]]:
+        """ID별 ping이 있으므로 **팔과 손을 따로 말할 수 있다.**
+
+        버스가 통째로 죽은 것과 부품 하나가 사라진 것은 다르다. 전부 무응답이면
+        그것은 포트·전원 문제이지 "손이 없다"가 아니다 — 원인을 단정하지 않고
+        **관측한 사실만** 올린다. 넓게 막는 판단은 호출부가 한다.
+        """
+        pings = {}
+        for dxl_id in EXPECTED_IDS:
+            try:
+                pings[dxl_id] = bool(self.ping(dxl_id).get("responded"))
+            except Exception:                      # noqa: BLE001 — 무응답도 사실이다
+                pings[dxl_id] = False
+        arm_ok = [pings.get(i, False) for i in ARM_IDS]
+        hand_ok = pings.get(GRIPPER_ID, False)
+        none_responded = not any(pings.values())
+        detail = {str(k): v for k, v in pings.items()}
+        if none_responded:
+            reason = "어느 관절도 응답하지 않습니다 — 포트·전원·배선을 먼저 봅니다"
+            return {"arm": {"responding": False, "evidence": "ping",
+                            "reason": reason, "detail": detail, "all_silent": True},
+                    "hand": {"responding": False, "evidence": "ping",
+                             "reason": reason, "detail": detail, "all_silent": True}}
+        return {
+            "arm": {"responding": all(arm_ok), "evidence": "ping", "detail": detail},
+            "hand": {"responding": hand_ok, "evidence": "ping",
+                     "detail": {str(GRIPPER_ID): hand_ok}},
+        }
+
     def preflight(self) -> dict[str, Any]:
         pings = [self.ping(dxl_id) for dxl_id in EXPECTED_IDS]
         snapshot = self.snapshot("hardware_preflight")
@@ -533,8 +565,8 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
             # 있으면 요청 속도를 통째로 갈아치웠다 — 제한이 40인데 10으로 천천히
             # 가라고 해도 40으로 갔다. 느리게 가라는 요청을 빠르게 바꾸는 것은
             # 안전 설정이 할 일이 아니다.
-            capped = min(int(velocity), int(velocity_per_joint.get(dxl_id, velocity)))
-            self.write_reg(dxl_id, ADDR_PROFILE_VELOCITY, 4, max(1, capped))
+            capped = effective_velocity(velocity, velocity_per_joint.get(dxl_id))
+            self.write_reg(dxl_id, ADDR_PROFILE_VELOCITY, 4, capped)
 
         entry = self._record("GroupSyncWrite", address=ADDR_GOAL_POSITION)
         comm = None

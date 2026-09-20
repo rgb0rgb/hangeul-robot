@@ -14,6 +14,38 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 
+def effective_velocity(requested: int, limit: int | None) -> int:
+    """이 관절에 실제로 쓸 속도. **한계는 상한이지 덮어쓰기가 아니다.**
+
+        effective_velocity(10, 50) == 10     느리게 가라면 느리게 간다
+        effective_velocity(200, 50) == 50    한계를 넘겨 달라면 한계까지만
+        effective_velocity(10, None) == 10   한계가 없으면 요청대로
+
+    돌려주는 값은 항상 1 이상이다 — 0은 "움직이지 않는다"가 아니라 SDK마다
+    다른 뜻(대개 최고 속도)이라 그대로 내보내면 안 된다.
+    """
+    value = int(requested)
+    if limit is not None:
+        value = min(value, int(limit))
+    return max(1, value)
+
+
+def batch_velocity(requested: int, velocity_per_joint: dict[str, int] | None,
+                   joints: "list[str] | tuple[str, ...]") -> int:
+    """배치 명령 하나에 속도 하나만 실리는 SDK를 위한 값.
+
+    xArm의 `set_servo_angle(speed=...)`처럼 여러 관절을 한 번에 보내면서 속도는
+    하나만 받는 SDK가 있다. 그때는 **가장 엄한 한계를 따른다** — 관절 하나라도
+    한계를 넘기면 그 한계는 없는 것이 되기 때문이다.
+
+    (2026-09-20: xArm 어댑터는 velocity_per_joint를 받아놓고 쓰지 않았다.
+    관절별 한계를 걸어도 아무 일도 일어나지 않았다.)
+    """
+    per_joint = velocity_per_joint or {}
+    speeds = [effective_velocity(requested, per_joint.get(name)) for name in joints]
+    return min(speeds) if speeds else effective_velocity(requested, None)
+
+
 class RobotArmAdapter(ABC):
     """모든 로봇팔 어댑터가 구현해야 하는 최소 공통 인터페이스.
 
@@ -30,9 +62,13 @@ class RobotArmAdapter(ABC):
     excluded_joints: set[str] = set()
 
     @classmethod
-    @abstractmethod
     def from_resolved(cls, profile: dict[str, Any], instance: dict[str, Any]) -> "RobotArmAdapter":
         """옛 dexter 매니페스트(profile/instance)로 어댑터를 구성한다. **지금은 쓰이지 않는다.**
+
+        2026-09-20 ROS 2 반증 시험에서 걸렸다. 이 메서드는 **abstract였다** —
+        즉 새 어댑터를 쓰는 사람은 아래 설명이 "쓰이지 않는다"고 말하는
+        메서드를 반드시 구현해야 했다. 쓰지 않는 것을 강제하는 계약은 계약이
+        아니라 통행세다. abstract를 뗐고, 안 만든 어댑터는 불렀을 때만 막힌다.
 
         주의 — 이 메서드의 인자는 옛 저장소의 스키마(instance["connection"]
         ["device_default"] 등)이고, 지금 쓰는 부품 기술서와 모양이 다르다.
@@ -43,7 +79,9 @@ class RobotArmAdapter(ABC):
         사실이 아니었다(xArm 반증 시험 20260817에서 확인). 새 어댑터를 쓸 때
         이 메서드에 의존하지 않는다 — 남겨 둔 것은 옛 호출부 호환 때문이다.
         """
-        raise NotImplementedError
+        raise NotImplementedError(
+            f"{cls.__name__}은(는) 옛 매니페스트 경로를 지원하지 않습니다. "
+            f"부품 기술서와 runtime_adapter로 붙입니다")
 
     @abstractmethod
     def __enter__(self) -> "RobotArmAdapter":
@@ -75,8 +113,59 @@ class RobotArmAdapter(ABC):
         temperature_limits_c: dict[str, float] | None = None,
         velocity_per_joint: dict[str, int] | None = None,
     ) -> dict[str, Any]:
-        """팔 관절(그리퍼 제외)을 targets로 동시 이동."""
+        """팔 관절(그리퍼 제외)을 targets로 동시 이동.
+
+        **velocity_per_joint는 상한이지 덮어쓰기가 아니다.**
+
+        전에는 이 뜻이 어디에도 적혀 있지 않았고, 그래서 두 어댑터가 반대로
+        갔다(2026-09-20 확인). OMX는 `min()`으로 상한을 지켰고, MyCobot은
+        관절별 값이 있으면 요청값을 갈아치웠다 — 출하 기본값이 전 관절 50이라
+        "느리게 가라"(10)가 50으로 나갔다. **계약이 뜻을 정하지 않았으므로
+        두 구현 다 "맞았다."**
+
+        지켜야 할 불변식은 속도의 **같음이 아니라 덮어쓰지 않음**이다.
+
+            SDK에 실제로 넘어간 값 ≤ 요청값
+            SDK에 실제로 넘어간 값 ≤ 한계값
+
+        서로 다른 SDK에 같은 숫자를 넣었다고 물리 속도가 같아야 하는 것은
+        아니다(MyCobot 1~100 눈금 · OMX Dynamixel 프로파일 속도 · ROS 2 rad/s).
+        **장치 사이의 숫자를 직접 비교하지 않는다.** 각 어댑터가 자기 눈금
+        안에서 위 두 부등식을 지키면 된다.
+
+        구현은 `effective_velocity()`를 거쳐 값을 정한다. 직접 계산하면
+        언젠가 또 갈린다.
+
+        적용 범위: 양수 원시 속도 요청. 0·음수·지원 범위 밖 입력의 처리는
+        각 어댑터가 자기 SDK 규칙으로 정하고 응답에 밝힌다.
+        """
         raise NotImplementedError
+
+    def attest_parts(self) -> dict[str, dict[str, Any]]:
+        """지금 어떤 부품이 응답하는가. **말할 수 있는 것만 말한다.**
+
+        돌려주는 것은 부품 종류(`arm` · `hand` · …)별로 이렇다.
+
+            {"arm":  {"responding": True,  "evidence": "ping", "detail": {...}},
+             "hand": {"responding": None,  "evidence": "none",
+                      "reason": "이 로봇에는 손 응답을 확인할 수단이 없습니다"}}
+
+            responding=True   그 부품에서 응답을 얻었다
+            responding=False  응답을 얻지 못했다
+            responding=None   **확인할 수단이 없다** — 모른다는 뜻이지 정상이 아니다
+
+        `None`을 조용히 `True`로 바꾸지 않는다. 로봇마다 말할 수 있는 범위가
+        다르고(OMX는 ID별 ping이 있고 MyCobot은 손에 그런 수단이 없다),
+        없는 근거를 있는 척하면 화면이 거짓말을 한다.
+
+        **이것은 통신 응답이지 기계적 장착의 증거가 아니다.** 집게만 떼고
+        전자부가 남아 있으면 `responding=True`가 그대로 나온다. 장착은
+        별도 수단(장착 스위치 등)이나 운영자 점검으로만 확인된다.
+
+        기본값은 빈 사전 — "부품별로 말할 수단이 없다"는 뜻이다. 호출부는
+        이것을 전부 `None`으로 읽는다.
+        """
+        return {}
 
     @abstractmethod
     def move_gripper(

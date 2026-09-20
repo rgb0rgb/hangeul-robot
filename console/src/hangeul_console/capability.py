@@ -7,7 +7,14 @@
 
     lifecycle     부품이 있는가        INSTALLED / NOT_INSTALLED / DISABLED
     health        지금 정상인가        AVAILABLE / DEGRADED / UNAVAILABLE
+    attestation   응답을 얻었는가      RESPONDING / NOT_RESPONDING / UNVERIFIABLE
     verification  이 몸으로 해봤는가   UNVERIFIED / VERIFIED / REVOKED
+
+**attestation은 통신 응답이지 기계적 장착의 증거가 아니다.** 집게만 떼고
+전자부가 남아 있으면 RESPONDING이 그대로 나온다. 그리고 로봇마다 말할 수 있는
+범위가 다르다 — OMX는 ID별 ping이 있고, MyCobot은 손에 그런 수단이 없다.
+수단이 없으면 **UNVERIFIABLE**이다. 모른다는 뜻이지 정상이라는 뜻이 아니며,
+**조용히 RESPONDING으로 바꾸지 않는다.**
 
 **부품을 바꾸면 그 부품의 검증만 내려간다.** 손을 바꿨다고 팔 검증까지 버리지 않는다.
 그러려고 부품별 지문을 따로 둔다.
@@ -72,6 +79,10 @@ class CapabilityState:
     reason: str = ""
     checked_at: str = ""
     evidence_ref: str = ""
+    attestation: str = "UNVERIFIABLE"
+    attestation_reason: str = ""
+    attestation_evidence: str = ""
+    attestation_checked_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -87,6 +98,13 @@ class CapabilityState:
             "reason": self.reason,
             "checked_at": self.checked_at,
             "evidence_ref": self.evidence_ref,
+            "attestation": self.attestation,
+            "attestation_reason": self.attestation_reason,
+            "attestation_evidence": self.attestation_evidence,
+            "attestation_checked_at": self.attestation_checked_at,
+            # **실행 허용이 아니다.** 화면 표시용이다 — verification도 ESTOP도
+            # 실행값 호환성도 보지 않는다. 실제 게이트는 task.check_runnable()과
+            # 런타임의 check_move()다.
             "usable_now": self.lifecycle == "INSTALLED" and self.health == "AVAILABLE",
         }
 
@@ -105,10 +123,19 @@ class CapabilityStore:
     def _key(capability_id: str, instance_id: str) -> str:
         return f"{instance_id}::{capability_id}"
 
-    def snapshot(self, config, health: dict[str, str] | None = None) -> list[CapabilityState]:
+    def snapshot(self, config, health: dict[str, str] | None = None,
+                 parts: dict[str, dict[str, Any]] | None = None) -> list[CapabilityState]:
+        """`parts`는 런타임이 올린 **부품 종류별 응답**이다.
+
+        비어 있으면 "부품별로 말할 수단이 없다"는 뜻이고, 그때는 전부
+        UNVERIFIABLE이 된다. 수단이 없는 것을 정상으로 바꾸지 않는다.
+        """
         provided = config.provided()
         health_map = health or {}
+        parts_map = parts or {}
         default_health = health_map.get("_default", "UNAVAILABLE")
+        # 전부 조용하면 부품별로 나눌 근거가 없다 — 그것은 버스·전원 쪽 사실이다.
+        all_silent = any(bool(p.get("all_silent")) for p in parts_map.values())
         out: list[CapabilityState] = []
 
         for capability_id in KNOWN_CAPABILITIES:
@@ -140,14 +167,32 @@ class CapabilityStore:
             if item_health != "AVAILABLE" and not reason:
                 reason = health_map.get("_reason", "로봇 런타임에 연결되지 않았습니다")
 
+            # 부품별 응답을 능력으로 옮긴다. 전부 조용할 때는 나누지 않는다 —
+            # "손이 없다"가 아니라 "포트·전원이 문제다"이기 때문이다.
+            part = parts_map.get(klass) or {}
+            responding = part.get("responding") if not all_silent else None
+            attestation = {True: "RESPONDING", False: "NOT_RESPONDING"}.get(
+                responding, "UNVERIFIABLE")
+            attest_reason = str(part.get("reason") or "")
+            if not part:
+                attest_reason = attest_reason or "이 로봇은 부품별 응답을 확인할 수단이 없습니다"
+            if attestation == "NOT_RESPONDING" and item_health == "AVAILABLE":
+                # 응답이 없는 부품에 기대는 능력은 지금 쓸 수 없다.
+                item_health = "UNAVAILABLE"
+                reason = reason or attest_reason or f"{klass} 부품이 응답하지 않습니다"
+
             out.append(CapabilityState(
                 capability_id, config.instance_id, "INSTALLED", item_health,
                 verification, provider, klass, part_fp,
-                reason=reason, checked_at=checked, evidence_ref=evidence))
+                reason=reason, checked_at=checked, evidence_ref=evidence,
+                attestation=attestation, attestation_reason=attest_reason,
+                attestation_evidence=str(part.get("evidence") or ""),
+                attestation_checked_at=str(parts_map.get("_checked_at") or "")))
         return out
 
-    def visible(self, config, health: dict[str, str] | None = None) -> list[CapabilityState]:
-        return [c for c in self.snapshot(config, health)
+    def visible(self, config, health: dict[str, str] | None = None,
+                parts: dict[str, dict[str, Any]] | None = None) -> list[CapabilityState]:
+        return [c for c in self.snapshot(config, health, parts)
                 if c.capability_id.startswith(USER_VISIBLE_PREFIX)]
 
     def mark_verified(self, capability_id: str, config, *, evidence_ref: str,

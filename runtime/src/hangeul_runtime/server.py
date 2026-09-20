@@ -19,6 +19,7 @@ import json
 import os
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -89,6 +90,33 @@ CONFIG: dict[str, Any] = {
     "file_stamp": None,
     "device_stamp": None,
 }
+
+# 부품별 응답 확인. **폴링마다 실물을 두드리지 않는다** — 확인은 버스를
+# 쓰는 일이라 움직이는 중에 끼어들면 안 된다. 연결할 때와 복구할 때만
+# 새로 보고, 그 사이에는 **언제 본 것인지와 함께** 그대로 올린다.
+_ATTEST: dict[str, Any] = {"at": "", "parts": {}, "error": ""}
+
+
+def _refresh_attestation() -> dict[str, Any]:
+    """지금 어떤 부품이 응답하는지 다시 본다. 실패해도 런타임은 계속 산다."""
+    adapter = CONFIG.get("adapter")
+    if adapter is None:
+        _ATTEST.update({"at": datetime.now().isoformat(timespec="seconds"),
+                        "parts": {}, "error": "",
+                        "reason": CONFIG.get("simulate_reason") or "시늉 모드"})
+        return _ATTEST
+    try:
+        with SERIAL_LOCK:
+            parts = adapter.attest_parts()
+        _ATTEST.update({"at": datetime.now().isoformat(timespec="seconds"),
+                        "parts": parts or {}, "error": "", "reason": ""})
+    except Exception as exc:                       # noqa: BLE001
+        # 확인에 실패한 것과 부품이 없는 것은 다르다. 섞지 않는다.
+        _ATTEST.update({"at": datetime.now().isoformat(timespec="seconds"),
+                        "parts": {}, "error": f"{type(exc).__name__}: {exc}",
+                        "reason": "부품 확인에 실패했습니다"})
+    return _ATTEST
+
 
 # 화면의 속도 낱말 → 실제 속도. 실물 검증(라운드 473)에서 나온 값이다.
 SPEED_TO_VELOCITY = {"slow": 50, "normal": 120, "fast": 200}
@@ -436,6 +464,7 @@ def _recover_hardware(*, force: bool = False, may_reopen_link: bool = False) -> 
     except Exception as exc:
         report["hold_error"] = str(exc)
     state.note("오류 복구 시도" + (" — 실패" if report.get("hold_error") else " — 그 자리에 세움"))
+    _refresh_attestation()          # 복구 뒤에는 무엇이 돌아왔는지 다시 본다
     return report
 
 
@@ -447,8 +476,24 @@ def estop_status() -> dict:
             "device": CONFIG["device"], "simulated": CONFIG["adapter"] is None or bool(getattr(CONFIG["adapter"], "simulated", False)),
             # 시늉이면 **왜 시늉인지** 함께 준다. 조용한 시늉은 거짓말에 가깝다
             "simulate_reason": CONFIG.get("simulate_reason") or "",
+            # 부품별 응답 — **언제 본 것인지와 함께** 준다. 시각 없는 증거는
+            # 증거가 아니다. 빈 사전이면 "부품별로 말할 수단이 없다"는 뜻이다.
+            "parts": _ATTEST.get("parts") or {},
+            "parts_checked_at": _ATTEST.get("at") or "",
+            "parts_error": _ATTEST.get("error") or "",
+            "parts_reason": _ATTEST.get("reason") or "",
             # 옛 노드와 같은 이름도 함께 준다 — 화면이 둘 다 읽는다
             "active": state.estop_latched}
+
+
+@app.post("/api/attest-parts")
+def attest_parts_now() -> dict:
+    """부품 확인을 지금 다시 한다. 사람이 무언가를 꽂거나 뺀 뒤 누른다."""
+    answer = _refresh_attestation()
+    return {"ok": True, "parts": answer.get("parts") or {},
+            "parts_checked_at": answer.get("at") or "",
+            "parts_error": answer.get("error") or "",
+            "parts_reason": answer.get("reason") or ""}
 
 
 @app.post("/api/estop")
@@ -1022,7 +1067,7 @@ def _save_limits_file() -> None:
 
 def build(module_id: str, device: str, limits_path: str = "", *,
           modules_dir: str = "", simulate: bool = False,
-          eye: str = "", eye_device: str = "") -> None:
+          eye: str = "", eye_device: str = "", state_path: str = "") -> None:
     """런타임을 이 부품에 맞게 세운다. 실물이 없으면 시늉 모드로 뜬다."""
     _read_cache.update({"at": 0.0, "value": {}})   # 다른 로봇의 값을 물려받지 않는다
     _TRACKING["session"] = None
@@ -1033,6 +1078,18 @@ def build(module_id: str, device: str, limits_path: str = "", *,
     CONFIG["descriptor"] = _load_descriptor(module_id)
     CONFIG["hand_joint"] = _load_hand(module_id)
     CONFIG["limits_path"] = limits_path or str(root / "data" / f"safety_limits_{module_id}.json")
+
+    # 막는 상태(정지·단선·일시정지·부재)를 파일에 잇는다. 이게 없으면 정지를
+    # 걸어 둔 채 런타임이 죽었다 살아날 때 래치가 풀린 채로 태어난다 —
+    # 사람이 풀지 않았는데 풀리는 길이다(safety.py 머리말).
+    CONFIG["state_path"] = state_path or str(root / "data" / f"safety_state_{module_id}.json")
+    inherited = state.bind_storage(CONFIG["state_path"])
+    blocking = state.blocking_summary()
+    if blocking:
+        state.note("이전 상태를 이어받았습니다 — " + " · ".join(blocking)
+                   + ". 풀려면 사람이 해제해야 합니다", "stop")
+    elif inherited:
+        state.note("이전 상태를 이어받았습니다 — 막는 것 없음")
 
     # 눈은 **여기서 열지 않는다.** 카메라는 추적이 시작될 때만 열린다 —
     # 계속 붙들고 있으면 다른 프로그램이 같은 카메라를 못 쓰고, 쓰지도 않는
@@ -1056,7 +1113,13 @@ def build(module_id: str, device: str, limits_path: str = "", *,
         state.note(f"시늉 모드 ({module_id}) — {reason}. 실물에 아무것도 보내지 않습니다")
 
     # Explicit simulation must never open the descriptor's physical adapter.
-    is_demo = CONFIG["descriptor"].get("runtime_adapter") == "simulated_arm_adapter:SimulatedArmAdapter"
+    # **어댑터 이름을 문자열로 비교하지 않는다.** `_adapter_class()`에서 걷어낸
+    # 문자열 훑기가 여기서 되살아나 있었다 — 두 번째 시뮬레이터(Gazebo 등)를
+    # 붙이면 시늉으로 알아보지 못하고 `adapter=None`으로 조용히 내려갔다.
+    # 기술서가 자기가 시늉인지 밝힌다.
+    descriptor = CONFIG["descriptor"]
+    is_demo = bool(descriptor.get("simulated")) or \
+        descriptor.get("runtime_adapter") == "simulated_arm_adapter:SimulatedArmAdapter"
     if simulate or is_demo:
         from .hardware.simulated_arm_adapter import SimulatedArmAdapter
         descriptor = dict(CONFIG["descriptor"])
@@ -1088,6 +1151,7 @@ def build(module_id: str, device: str, limits_path: str = "", *,
     CONFIG["simulate_reason"] = ""
     CONFIG["device_stamp"] = _device_stamp()
     state.note(f"로봇 연결 ({module_id} @ {device})")
+    _refresh_attestation()          # 붙자마자 무엇이 응답하는지 본다
 
 
 def main() -> int:

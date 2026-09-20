@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from hangeul_runtime.abstraction.robot_arm_adapter import RobotArmAdapter
+from hangeul_runtime.abstraction.robot_arm_adapter import (
+    RobotArmAdapter,
+    effective_velocity,
+)
 
 
 class SimulatedArmAdapter(RobotArmAdapter):
@@ -66,7 +69,15 @@ class SimulatedArmAdapter(RobotArmAdapter):
         for joint, target in targets.items():
             if str(joint) not in self.excluded_joints:
                 self._positions[str(joint)] = int(target)
-        return {"success": True, "simulated": True, "label": label, "targets": dict(targets)}
+        # 시늉이라도 **무엇이 나갔을지는 같은 계약으로 셈한다.** 그래야 실물
+        # 없이 속도 정책을 볼 수 있다 — 그러라고 두는 것이 시뮬레이터다.
+        # (전에는 velocity를 통째로 무시했다. 그러면 "느리게 가라"가 지켜지는지
+        #  시뮬레이션에서 확인할 방법이 없다.)
+        per_joint = {str(joint): effective_velocity(
+                         velocity, (velocity_per_joint or {}).get(str(joint)))
+                     for joint in targets}
+        return {"success": True, "simulated": True, "label": label,
+                "targets": dict(targets), "velocity_per_joint": per_joint}
 
     def move_gripper(
         self,

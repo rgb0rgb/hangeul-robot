@@ -4,10 +4,22 @@
   "display_name": "Simulated Arm",
   "mount": "core_a.arm_a",
   "joints": [
-    {"id": 1, "role": "base"},
-    {"id": 2, "role": "joint"},
-    {"id": 3, "role": "joint"},
-    {"id": 4, "role": "joint"}
+    {
+      "id": 1,
+      "role": "base"
+    },
+    {
+      "id": 2,
+      "role": "joint"
+    },
+    {
+      "id": 3,
+      "role": "joint"
+    },
+    {
+      "id": 4,
+      "role": "joint"
+    }
   ],
   "value_unit": "tick",
   "provides": [
@@ -16,18 +28,32 @@
     "motion.read_pose",
     "motion.fine_move"
   ],
-  "requires": ["power.12v", "bus.serial"],
-  "limits": {"payload_g": 0, "mass_g": 0, "reach_mm": 300},
+  "requires": [
+    "power.12v",
+    "bus.serial"
+  ],
+  "limits": {
+    "payload_g": 0,
+    "mass_g": 0,
+    "reach_mm": 300
+  },
   "safety_class": "motion",
   "runtime_url": "http://127.0.0.1:8601",
-  "device": {"linux": "", "windows": ""},
+  "device": {
+    "linux": "",
+    "windows": ""
+  },
   "runtime_model": "simulated_arm",
   "runtime_adapter": "simulated_arm_adapter:SimulatedArmAdapter",
-  "unit": {"kind": "tick", "per_degree": 10.0, "center": 2048},
+  "simulated": true,
+  "unit": {
+    "kind": "tick",
+    "per_degree": 10.0,
+    "center": 2048
+  },
   "hardware_evidence": {
     "state": "simulated",
     "ko": "공개 데모용 시뮬레이션 팔입니다. 실물 검증값이 아닙니다.",
     "en": "Public demo simulated arm. These are not validated hardware parameters."
   }
 }
-

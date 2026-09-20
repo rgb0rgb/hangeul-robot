@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from typing import Any
 
@@ -23,6 +25,43 @@ STEP_REQUIREMENTS = {
 # 관측 부품(눈·귀)은 **작업 단계가 될 수 없다.** 보는 것과 듣는 것은 움직임이 아니다.
 # 관측 결과를 쓰고 싶으면 사람이 보고 판단해 자세를 고른다.
 OBSERVE_ONLY = ("observe.", "listen.")
+
+
+# 실행을 막는 판정들. "발음이 있다"와 "그 발음을 지금 써도 된다"는 다르다.
+BLOCKING_VERIFICATIONS = ("REVOKED", "COMPAT_CHECK_REQUIRED", "NEEDS_RETEACH")
+
+# 뜻 해시에서 빼는 것 — 표시용이라 바뀌어도 동작의 의미는 그대로다.
+DISPLAY_ONLY_STEP_KEYS = ("icon", "note")
+
+# **자세 단계에서는 label을 빼지 않는다.**
+# 발음은 단계 번호(index)로만 맞춰진다. 그래서 "A로 간다"와 "B로 간다"를
+# 가르는 것이 label뿐이다 — 그걸 표시용으로 치우면 A에 가르친 관절값이
+# B에 조용히 실린다(2026-09-20 재현). 다른 단계(손 열기·닫기·대기)는
+# 하는 일이 이름과 무관하므로 label이 뜻에 들어가지 않는다.
+#
+# 이것은 **임시 방편이다.** 바른 해법은 자세 단계에 이름과 별개인 고정
+# 식별자를 두고 발음을 거기에 매는 것이다. 그러면 이름을 고쳐도 뜻은
+# 그대로고, 가리키는 자세가 바뀌면 그때만 다시 묻는다.
+NAME_IS_MEANING_KINDS = ("pose",)
+
+
+def meaning_digest(steps: list[dict[str, Any]]) -> str:
+    """이 작업이 **무엇을 하는지**의 해시. 이름만 바꾼 것과 동작이 바뀐 것을 가른다.
+
+    전에는 이게 없었다. 그래서 작업 ID는 그대로 두고 자세 단계를 A에서 B로
+    바꿔도, 옛 단계 0의 관절값이 새 단계 B에 그대로 붙었다(2026-09-20 재현:
+    taught=True). 새 작업에 옛 몸값이 실렸다.
+    """
+    rows = []
+    for index, step in enumerate(steps or []):
+        drop = set(DISPLAY_ONLY_STEP_KEYS)
+        if step.get("kind") not in NAME_IS_MEANING_KINDS:
+            drop.add("label")
+        row = {k: v for k, v in step.items() if k not in drop}
+        row["_index"] = index
+        rows.append(row)
+    blob = json.dumps(rows, sort_keys=True, ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
 class TaskError(ValueError):
@@ -92,7 +131,8 @@ class TaskStore:
             if step.get("kind") not in STEP_REQUIREMENTS:
                 raise TaskError("bad_step", f"알 수 없는 단계: {step.get('kind')}")
         record = {"meaning_id": meaning_id, "label": label, "icon": icon,
-                  "steps": steps, "updated_at": datetime.now().isoformat(timespec="seconds")}
+                  "steps": steps, "meaning_digest": meaning_digest(steps),
+                  "updated_at": datetime.now().isoformat(timespec="seconds")}
         self.meanings[meaning_id] = record
         return record
 
@@ -107,6 +147,8 @@ class TaskStore:
             "meaning_id": meaning_id,
             "instance_id": config.instance_id,
             "configuration_fingerprint": config.fingerprint(),
+            # 가르칠 당시의 **작업 정의**. 정의가 개정되면 이 값이 달라진다.
+            "meaning_digest": meaning_digest(self.meanings[meaning_id].get("steps") or []),
             "step_targets": step_targets,
             "verification": "UNVERIFIED",
             "operator": operator,
@@ -116,14 +158,49 @@ class TaskStore:
         return record
 
     def realization(self, meaning_id: str, config) -> dict[str, Any] | None:
+        """이 몸에서의 발음. **쓸 수 있는지까지 판정해서 돌려준다.**
+
+        판정은 근거별로 갈린다. "자세를 잃지 않는다"와 "바로 실행해도 된다"는
+        다르다 — 근거가 없으면 원본은 보존하되 실행은 막는다.
+
+            같은 지문 · 같은 정의          그대로 쓴다
+            같은 지문 · 정의가 개정됨      NEEDS_RETEACH      다시 가르친다
+            옛 지문(v1)이 지금 것과 맞음   COMPAT_CHECK_REQUIRED
+                                           단위·교정이 지문에 없던 때 저장됐다.
+                                           보존하되 확인 전에는 쓰지 않는다
+            그 밖                          REVOKED            부품이 바뀌었다
+        """
         record = self.realizations.get(f"{config.instance_id}::{meaning_id}")
         if not record:
             return None
-        if record.get("configuration_fingerprint") != config.fingerprint():
-            # 뜻은 남고 발음만 무효가 된다
-            return {**record, "verification": "REVOKED",
-                    "reason": "부품이 바뀌어 이전에 가르친 값은 쓸 수 없습니다"}
-        return record
+        stored = record.get("configuration_fingerprint")
+        current = config.fingerprint()
+
+        if stored == current:
+            saved_digest = record.get("meaning_digest")
+            now_digest = meaning_digest((self.meanings.get(meaning_id) or {}).get("steps") or [])
+            if not saved_digest:
+                # 뜻 해시가 없던 때 저장된 기록이다. 정의가 그때와 같은지
+                # 판단할 근거가 없으므로 추정해서 승인하지 않는다.
+                return {**record, "verification": "COMPAT_CHECK_REQUIRED",
+                        "reason": "작업 정의가 그때와 같은지 확인할 근거가 없습니다. "
+                                  "확인하거나 다시 가르쳐야 합니다"}
+            if saved_digest != now_digest:
+                return {**record, "verification": "NEEDS_RETEACH",
+                        "reason": "작업 단계가 바뀌었습니다. 이전에 가르친 값은 "
+                                  "새 단계의 값이 아닙니다"}
+            return record
+
+        if stored and stored == config.legacy_fingerprint():
+            # 부품 구성은 그대로인데, 단위·교정이 지문에 없던 때 저장된 값이다.
+            # 단위가 실제로 바뀌었는지는 이 값만으로 알 수 없다 — 그래서 묻는다.
+            return {**record, "verification": "COMPAT_CHECK_REQUIRED",
+                    "reason": "단위·교정이 지문에 들어가기 전에 저장된 값입니다. "
+                              "그대로 써도 되는지 확인이 필요합니다"}
+
+        # 뜻은 남고 발음만 무효가 된다
+        return {**record, "verification": "REVOKED",
+                "reason": "부품이 바뀌어 이전에 가르친 값은 쓸 수 없습니다"}
 
     # ── 해석 ────────────────────────────────────────────────────
     def resolve(self, meaning_id: str, config) -> dict[str, Any]:
@@ -137,7 +214,7 @@ class TaskStore:
             item = dict(step)
             if step.get("kind") == "pose":
                 targets = None
-                if record and record.get("verification") != "REVOKED":
+                if record and record.get("verification") not in BLOCKING_VERIFICATIONS:
                     found = [t for t in record["step_targets"] if t.get("index") == index]
                     targets = found[0].get("targets") if found else None
                 item["targets"] = targets
@@ -147,7 +224,7 @@ class TaskStore:
             "label": meaning["label"],
             "icon": meaning.get("icon", "🤖"),
             "steps": steps,
-            "taught": bool(record and record.get("verification") != "REVOKED"),
+            "taught": bool(record and record.get("verification") not in BLOCKING_VERIFICATIONS),
             "verification": (record or {}).get("verification", "UNTAUGHT"),
             "reason": (record or {}).get("reason", ""),
             "required": required_capabilities(meaning["steps"]),

@@ -13,9 +13,11 @@ nohup.out
 data/instances/*/
 !data/instances/.gitkeep
 
-# 이 컴퓨터에서만 뜻이 있는 것 — 화면 상태·장치 임대
+# 이 컴퓨터에서만 뜻이 있는 것 — 화면 상태·장치 임대·막는 상태
 data/console_state.json
 data/leases/
+# 정지·단선 래치는 **그 로봇 앞에 선 사람의 상태**다. 출하물에 넣지 않는다.
+data/safety_state_*.json
 
 # 허깅페이스에 올릴 묶음은 만들어 쓰는 것이다
 build/

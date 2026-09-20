@@ -42,6 +42,33 @@ SAFETY_CLASSES = {
 }
 
 
+def normalize_joint_id(value: Any) -> Any:
+    """관절 식별자를 **한 가지 모양으로** 만든다. 숫자면 숫자, 이름이면 이름.
+
+    앞의 세 로봇은 관절이 전부 숫자였다(OMX 11~15 · MyCobot 1~6 · xArm 1~6).
+    그래서 곳곳에서 `int(...)`로 바꿔 쓰고 있었고, 관절 이름이 문자열인 로봇
+    (ROS 2의 `shoulder_pan_joint`)을 붙이는 순간 **막히는 것이 아니라 깨졌다**
+    — `ValueError`였다(2026-09-20 반증 시험).
+
+    규칙은 둘이다.
+
+        11 · "11"  →  11    숫자로 읽히는 것은 숫자로 모은다.
+                            **기존 지문이 그대로 나오게 하려는 것이다.**
+        "011" · "shoulder_pan_joint"  →  그대로 문자열
+
+    `"011"`을 11로 접지 않는 이유가 있다. 접으면 `"011"`과 `"11"`이 같은
+    관절이 되어 다른 식별자가 충돌한다. **되돌릴 수 있을 때만 모은다.**
+    """
+    if isinstance(value, bool):                     # True는 관절 번호가 아니다
+        raise ModuleError("bad_joint_id", f"관절 번호가 올바르지 않습니다: {value!r}")
+    if isinstance(value, int):
+        return value
+    text = str(value)
+    if text.lstrip("-").isdigit() and str(int(text)) == text:
+        return int(text)
+    return text
+
+
 class ModuleError(ValueError):
     def __init__(self, reason_code: str, message: str):
         super().__init__(message)
@@ -84,12 +111,12 @@ class Module:
     def mount_slot(self) -> str:
         return self.mount.split(".")[1] if "." in self.mount else ""
 
-    def joint_ids(self) -> list[int]:
+    def joint_ids(self) -> list[Any]:
         """지금 쓰는 관절만. 꺼진 축은 세지 않는다 — 축이 줄면 다른 몸이기 때문이다."""
-        return [int(j["id"]) for j in self.joints if not j.get("disabled")]
+        return [normalize_joint_id(j["id"]) for j in self.joints if not j.get("disabled")]
 
-    def all_joint_ids(self) -> list[int]:
-        return [int(j["id"]) for j in self.joints]
+    def all_joint_ids(self) -> list[Any]:
+        return [normalize_joint_id(j["id"]) for j in self.joints]
 
     def mass_g(self) -> float:
         return float(self.limits.get("mass_g") or 0)

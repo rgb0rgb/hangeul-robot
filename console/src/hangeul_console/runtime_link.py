@@ -112,6 +112,8 @@ class RuntimeLink:
                 "connected": False,
                 "reason": result.get("reason", "연결 없음"),
                 "capability_health": {"_default": "UNAVAILABLE", "_reason": result.get("reason", "")},
+                # 런타임에 닿지도 못했으면 부품별로 말할 근거가 없다.
+                "parts": {},
             }
         data = result["data"] or {}
         # 런타임은 살아 있는데 실물에 안 붙은 상태(시늉)를 "연결됨"으로만 보여주면,
@@ -123,6 +125,8 @@ class RuntimeLink:
                 "simulated": True,
                 "reason": f"시늉 모드 — {why}",
                 "capability_health": {"_default": "AVAILABLE", "_reason": why},
+                # 시늉이면 부품이 응답한 것이 아니다 — 확인 불가로 둔다.
+                "parts": {},
                 "runtime": data,
             }
         return {
@@ -130,6 +134,10 @@ class RuntimeLink:
             "simulated": False,
             "reason": "",
             "capability_health": {"_default": "AVAILABLE"},
+            # 런타임이 부품별 응답을 올렸으면 그대로 넘긴다. 비어 있으면
+            # "부품별로 말할 수단이 없다"는 뜻이고, 없는 근거를 지어내지 않는다.
+            "parts": {**(data.get("parts") or {}),
+                      "_checked_at": data.get("parts_checked_at") or ""},
             "runtime": data,
         }
 

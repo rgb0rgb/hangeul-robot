@@ -17,7 +17,10 @@ import time
 from contextlib import contextmanager
 from typing import Any, Callable, TypeVar
 
-from hangeul_runtime.abstraction.robot_arm_adapter import RobotArmAdapter
+from hangeul_runtime.abstraction.robot_arm_adapter import (
+    RobotArmAdapter,
+    effective_velocity,
+)
 from hangeul_runtime.hardware_errors import HardwareConnectionLostError
 
 MYCOBOT_280_M5_BAUD = 115200
@@ -362,8 +365,13 @@ class MyCobot280M5Adapter(RobotArmAdapter):
         # 관절별 속도가 실제로 다르게 지정된 경우에만 이 더 느린 경로를 쓴다
         # (검증 보고서 20260812: velocity_per_joint를 받으면서도 실제로는
         # 단일 velocity만 쓰던 버그).
+        # **관절별 값은 상한이지 덮어쓰기가 아니다** (2026-09-20).
+        # 전에는 여기서 관절별 값을 그대로 썼다. 출하 기본값이 전 관절 50이라
+        # "느리게 가라"(10)가 50으로 나갔다 — 요청보다 빠르게 가는 일이
+        # 안전 설정 때문에 일어났다. 계약이 뜻을 안 정해 OMX와 반대로 갔던
+        # 자리이고, 이제 계약(effective_velocity)이 정한다.
         per_joint_speeds = {
-            name: self._speed(velocity_per_joint.get(name, velocity))
+            name: self._speed(effective_velocity(velocity, velocity_per_joint.get(name)))
             for name in targets
         }
         needs_per_joint_calls = bool(self.excluded_joints) or len(set(per_joint_speeds.values())) > 1
@@ -435,6 +443,40 @@ class MyCobot280M5Adapter(RobotArmAdapter):
             "gripper": value,
             "velocity": self._speed(velocity),
             "temperature_check_supported": False,
+        }
+
+    def attest_parts(self) -> dict[str, dict[str, Any]]:
+        """**팔은 말할 수 있고 손은 말할 수 없다.**
+
+        이 컨트롤러가 주는 것은 컨트롤러 연결 여부와 팔 6관절 각도다.
+        그리퍼에 대해 "붙어 있는가"를 묻는 수단이 preflight 경로에 없다
+        (2026-09-20 확인). `get_gripper_value()`가 값을 돌려주기는 하지만,
+        떼어낸 상태에서 무엇을 돌려주는지 **확인된 바 없다.** 확인되지 않은
+        것을 근거로 쓰면 화면이 없는 사실을 말하게 된다.
+
+        그래서 손은 `None`(확인 불가)으로 둔다. 실물 관측(정상·기구만 제거·
+        전기적 분리·전원 차단)에서 어느 API가 무엇을 돌려주는지 기록한 뒤,
+        가르는 수단이 있으면 그때 여기에 넣는다.
+        """
+        arm_ok: bool | None
+        try:
+            connected = self._with_retry(self.mc.is_controller_connected,
+                                         is_valid=lambda c: c == 1)
+            angles = self._with_retry(self.mc.get_angles,
+                                      is_valid=lambda a: isinstance(a, (list, tuple))
+                                      and len(a) >= 6)
+            arm_ok = bool(connected == 1 and isinstance(angles, (list, tuple)))
+        except Exception as exc:                   # noqa: BLE001
+            arm_ok = False
+            return {"arm": {"responding": False, "evidence": "controller",
+                            "reason": f"{type(exc).__name__}: {exc}"},
+                    "hand": {"responding": None, "evidence": "none",
+                             "reason": "컨트롤러가 응답하지 않아 손도 알 수 없습니다"}}
+        return {
+            "arm": {"responding": arm_ok, "evidence": "controller",
+                    "detail": {"controller_connected": connected}},
+            "hand": {"responding": None, "evidence": "none",
+                     "reason": "이 로봇은 손이 붙어 있는지 확인할 수단이 없습니다"},
         }
 
     def preflight(self) -> dict[str, Any]:
