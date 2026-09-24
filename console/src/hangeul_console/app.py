@@ -20,6 +20,8 @@ import os
 import shlex
 import threading
 import time
+import uuid
+from copy import copy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -34,12 +36,14 @@ from .device_lease import LeaseBook, LeaseError
 from .instance_store import InstanceStore
 from .registry import Registry, RegistryError
 from .runtime_link import RuntimeLink
+from .repeat_work import RepeatWork, validate as validate_repeat
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 WEB_DIR = PROJECT_ROOT / "console" / "web"
 # 다시 시작할 때 쓰는 스크립트. 사람이 터미널에서 치는 것과 같은 것을 부른다 —
 # 화면에서 한 재시작과 손으로 한 재시작이 다른 결과를 내면 안 된다.
-RESTART_SCRIPT = PROJECT_ROOT / "run.sh"
+LAUNCHER = PROJECT_ROOT / "tools" / "launcher.py"
+LAUNCH_REPORT = PROJECT_ROOT / "data" / "run" / "last_report.json"
 MODULE_DIR = PROJECT_ROOT / "install" / "modules"
 ROBOT_CONFIG_DIR = PROJECT_ROOT / "install" / "robots"
 INSTANCE_DIR = PROJECT_ROOT / "data" / "instances"
@@ -52,6 +56,15 @@ capabilities = capability.CapabilityStore()
 TASK_PATH = PROJECT_ROOT / "data" / "tasks.json"
 leases = LeaseBook(PROJECT_ROOT / "data" / "leases")
 CONSOLE_HOLDER = "console"
+repeat_work = RepeatWork()
+
+
+def _repeat_busy(instance, owner=""):
+    if repeat_work.busy(instance.runtime_url or instance.instance_id, owner):
+        return {"success": False, "verdict": "BLOCKED_REPEAT_BUSY",
+                "error": "다른 이동을 실행하려면 반복 작업을 먼저 취소하세요",
+                "actual_hardware_called": False}
+    return None
 
 
 def _tasks() -> task_mod.TaskStore:
@@ -228,6 +241,73 @@ def _on_startup() -> None:
         _stamp_legacy_poses()
     except Exception as exc:                    # 기준선 기록 실패가 기동을 막지는 않는다
         _log(f"자세 기준선 기록 실패: {exc}", "s-log-err")
+    _log_launch_report()
+
+
+_LAUNCH_WORDS = {"started": "시작", "already_running": "이미 떠 있음", "no_device": "장치 없음",
+                 "failed": "실패", "port_busy": "포트 사용 중"}
+
+
+def _launch_report() -> dict[str, Any]:
+    try:
+        return json.loads(LAUNCH_REPORT.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _log_launch_report() -> None:
+    """방금 실행기가 무엇을 띄우고 무엇을 못 띄웠는지 화면 기록에 옮긴다.
+
+    재시작이 "됐다"고만 하고 런타임이 빠진 채로 뜨면, 사람은 원인을 모른 채
+    같은 단추를 계속 누른다(2026-09-24). 못 띄운 것은 이유와 함께 빨갛게 남긴다.
+    """
+    report = _launch_report()
+    try:
+        age = (datetime.now() - datetime.fromisoformat(report.get("finished_at") or "")).total_seconds()
+    except ValueError:
+        return
+    if age > 120:
+        return                                     # 오래된 보고는 다시 적지 않는다
+    for row in report.get("runtimes") or []:
+        good = row.get("state") in ("started", "already_running")
+        _log(f"런타임 {', '.join(row.get('robots') or [])}: {_LAUNCH_WORDS.get(row.get('state'), row.get('state'))}"
+             + (f" — {row['message']}" if row.get("message") else ""), "s-log-ok" if good else "s-log-err")
+    for line in report.get("problems") or []:
+        _log(f"실행 확인: {line}", "s-log-err")
+
+
+@app.get("/api/launcher-report")
+def launcher_report() -> dict:
+    """마지막 시작·초기화에서 무엇이 떴는지. 화면이 재시작 뒤 결과를 보여 줄 때 쓴다."""
+    # 아직 한 번도 실행기로 띄운 적이 없어도 같은 이름을 준다 — 화면이 빈 값을 읽게.
+    return {"success": True, "action": "", "at": "", "finished_at": "", "ok": None,
+            "runtimes": [], "problems": [], "console": {}, **_launch_report()}
+
+
+def _launcher_log():
+    """실행기의 출력은 버리지 않는다 — 초기화가 조용히 실패하면 이유가 여기 남는다."""
+    path = LAUNCH_REPORT.parent / "launcher.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return open(path, "ab")
+
+
+def _ensure_runtimes() -> None:
+    """로봇을 새로 등록하면 그 로봇의 런타임을 띄운다 — 터미널을 열게 하지 않는다."""
+    import subprocess
+    import sys
+    # 시험은 실제 장치를 열지 않는다(tests/conftest.py 가 이 값을 켠다).
+    if not LAUNCHER.exists() or os.environ.get("HANGEUL_NO_AUTOSTART"):
+        return
+    kw: dict[str, Any] = {"cwd": str(PROJECT_ROOT), "stdin": subprocess.DEVNULL,
+                          "stdout": _launcher_log(), "stderr": subprocess.STDOUT}
+    if os.name == "nt":
+        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+    else:
+        kw["start_new_session"] = True
+    try:
+        subprocess.Popen([sys.executable, str(LAUNCHER), "ensure", "--no-browser"], **kw)
+    except OSError as exc:
+        _log(f"런타임을 띄우지 못했습니다: {exc}", "s-log-err")
 
 
 def _stamp_new_modules() -> None:
@@ -639,6 +719,9 @@ def self_check(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     instance = _instance(str(payload.get("robot_id") or "")) if payload.get("robot_id") \
         else _selected()
     body = {k: v for k, v in payload.items() if k != "robot_id"}
+    refusal = _repeat_busy(instance)
+    if refusal:
+        return {**refusal, "stopped": refusal["error"]}
     body.setdefault("operator", "운영자")
     answer = runtime.forward(instance, "/api/self-check", body)
     idle = {"joints": {}, "labels": {}, "steps": [], "verdict": "",
@@ -810,11 +893,14 @@ def execute_actual(payload: dict[str, Any] = Body(default_factory=dict)) -> dict
     return _execute_pose(_selected(), payload)
 
 
-def _execute_pose(instance, payload: dict[str, Any], *, in_sequence: bool = False) -> dict:
+def _execute_pose(instance, payload: dict[str, Any], *, in_sequence: bool = False, repeat_id: str = "") -> dict:
     """자세 하나를 실행하는 유일한 길. 화면 버튼도, 순서 실행도 여기를 지난다.
 
     관문 순서: 부재 모드 → 능력 → 장치 임대 → 가르쳤나 → 부품 바뀌었나 → 런타임.
     """
+    refusal = _repeat_busy(instance, repeat_id)
+    if refusal:
+        return refusal
     away = get_away_mode()
     if away["away_mode"]:
         reason = "야간 자동 시간대" if away["auto_active"] and not away["manual"] else "부재 모드"
@@ -881,6 +967,17 @@ def _execute_pose(instance, payload: dict[str, Any], *, in_sequence: bool = Fals
                 "can_restamp": False,
                 "taught_with": stamped, "current_configuration": instance.fingerprint(),
                 "actual_hardware_called": False}
+    if pose.get("motion_type") == "repeat" and not repeat_id:
+        result = _start_repeat(instance, {**(pose.get("repeat_work") or {}),
+                                         "safety_inputs": payload.get("safety_inputs") or {},
+                                         "speed": payload.get("speed") or "slow"},
+                               sequence_owner=in_sequence, wait_for_completion=True)
+        if not result.get("success"):
+            return {**result, "verdict": "BLOCKED_REPEAT_START"}
+        success = result["state"] == "completed"
+        return {"success": success, "ok": success,
+                "verdict": "REPEAT_COMPLETED" if success else "BLOCKED_REPEAT_" + result["state"].upper(),
+                "error": result.get("error", ""), "repeat_work": result}
     passthrough = {k: v for k, v in payload.items()
                    if k not in ("skill_id", "speed", "targets", "operator")}
     speed = str(payload.get("speed") or "slow")
@@ -918,6 +1015,11 @@ def estop(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     """멈춤은 어떤 상태에서도 나간다. 대상이 없으면 전체."""
     targets = ([registry.get(payload["robot_id"])] if payload.get("robot_id")
                else registry.all())
+    for instance in targets:
+        try:
+            repeat_work.control(instance.instance_id, "cancel")
+        except ValueError:
+            pass
     results = [{"robot_id": i.instance_id, **runtime.stop(i)} for i in targets]
     failed = [r for r in results if not r.get("stopped")]
     _log(f"긴급정지 요청: {len(results)}대", "s-log-err")
@@ -932,12 +1034,16 @@ def estop(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
 @app.post("/api/jog")
 def jog(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     instance = _selected()
+    if refusal := _repeat_busy(instance):
+        return refusal
     return runtime.forward(instance, "/api/jog", payload)
 
 
 @app.post("/api/move-to")
 def move_to(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     instance = _selected()
+    if refusal := _repeat_busy(instance):
+        return refusal
     return runtime.forward(instance, "/api/move-to", payload)
 
 
@@ -1046,7 +1152,7 @@ def _pose_name(payload: dict[str, Any], *lang_keys: str) -> str:
 @app.post("/api/save-pose")
 def save_pose(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     """가르친 자세 저장 — 이 구성에서의 발음이다."""
-    instance = _selected()
+    instance = _instance(str(payload["instance_id"])) if payload.get("instance_id") else _selected()
     store = _poses(instance.instance_id)
     doc = store.poses()
     name_kr = _pose_name(payload, "name_kr", "display_name_kr")
@@ -1054,7 +1160,20 @@ def save_pose(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     if not name_kr and not name_en:
         # 이름 없는 카드는 만들지 않는다. 번호만 남은 카드는 사람이 못 읽는다.
         return {"success": False, "error": "동작 이름이 없습니다"}
-    skill_id = str(payload.get("skill_id") or f"POSE_{int(datetime.now().timestamp())}")
+    repeat_plan = None
+    if payload.get("motion_type") == "repeat":
+        try:
+            raw = payload.get("repeat_work")
+            if not isinstance(raw, dict):
+                raise ValueError("반복 작업 설정이 없습니다")
+            plan = validate_repeat(raw)
+            if plan["joint_id"] not in {str(j["joint_id"]) for j in instance.joint_view() if not j.get("disabled")}:
+                raise ValueError("없는 관절이거나 사용하지 않는 관절입니다")
+            repeat_plan = {"joint_id": plan["joint_id"], "a": plan["targets"][0], "b": plan["targets"][1],
+                           "count": plan["count"], "wait_a": plan["waits"][0], "wait_b": plan["waits"][1]}
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+    skill_id = str(payload.get("skill_id") or f"POSE_{uuid.uuid4().hex}")
     doc.setdefault("poses", {})[skill_id] = {
         "display_name_kr": name_kr or name_en,
         "display_name_en": name_en or name_kr,
@@ -1071,6 +1190,9 @@ def save_pose(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
         "configuration_fingerprint": instance.fingerprint(),
         "verification": "UNVERIFIED",
     }
+    if repeat_plan is not None:
+        doc["poses"][skill_id]["repeat_work"] = repeat_plan
+        doc["poses"][skill_id]["targets"] = {repeat_plan["joint_id"]: repeat_plan["a"]}
     store.save_poses(doc)
     _log(f"{instance.display_name}: 자세 저장 '{name_kr or name_en}'", "s-log-ok")
     return {"success": True, "skill_id": skill_id}
@@ -1326,6 +1448,7 @@ def add_robot(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     # 골라진 채로 있으면, 이어서 가르치는 자세가 엉뚱한 로봇에 들어간다.
     _update_console(lambda state: state.__setitem__("selected", instance_id))
     inherited = _inherit_family_poses(instance_id, modules)
+    _ensure_runtimes()
     _log(f"로봇 추가: {display_name} (부품 {len(modules)}개, 런타임 {runtime_url})"
          + (f" — 같은 계열 자세 {inherited}개 물려받음" if inherited else ""), "s-log-ok")
     return {"success": True, "robot_id": instance_id, "display_name": display_name,
@@ -1603,6 +1726,86 @@ def _flags(robot_id: str) -> dict[str, Any]:
         return _RUN_FLAGS.setdefault(robot_id, {"cancel": False, "paused": False})
 
 
+@app.get("/api/repeat-work")
+def repeat_status(robot_id: str = "") -> dict:
+    instance = _instance(robot_id) if robot_id else _selected()
+    return {"success": True, **repeat_work.status(instance.instance_id)}
+
+
+@app.post("/api/repeat-work/start")
+def repeat_start(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    instance = _instance(str(payload["robot_id"])) if payload.get("robot_id") else _selected()
+    return _start_repeat(instance, payload)
+
+
+def _start_repeat(instance, payload: dict[str, Any], *, sequence_owner: bool = False,
+                  wait_for_completion: bool = False) -> dict:
+    try:
+        plan = validate_repeat(payload)
+        known = {str(j["joint_id"]) for j in instance.joint_view() if not j.get("disabled")}
+        if plan["joint_id"] not in known:
+            raise ValueError("없는 관절이거나 사용하지 않는 관절입니다")
+        inputs = payload.get("safety_inputs") or {}
+        if any(inputs.get(k) is not True for k in
+               ("operator_present", "workspace_clear", "manual_stop_available", "estop_ready")) or inputs.get("human_nearby"):
+            raise ValueError("실행 전 안전 확인이 필요합니다")
+        if get_away_mode()["away_mode"]:
+            raise ValueError("부재 모드에서는 실행하지 않습니다")
+        bands = runtime.forward(instance, "/api/safety-limits", None, method="GET").get("joint_tick_limits") or {}
+        band = bands.get(plan["joint_id"])
+        if not band or any(not band[0] <= v <= band[1] for v in plan["targets"]):
+            raise ValueError("A와 B 모두 해당 관절의 설정된 안전 범위 안에 있어야 합니다")
+        fingerprint, resource = instance.fingerprint(), instance.runtime_url or instance.instance_id
+        speed = str(payload.get("speed") or "slow")
+        if speed not in ("slow", "normal", "fast"):
+            raise ValueError("잘못된 속도입니다")
+
+        def move(owner, joint, target):
+            current = _instance(instance.instance_id)
+            if current.fingerprint() != fingerprint or (current.runtime_url or current.instance_id) != resource:
+                return {"success": False, "error": "작업 중 부품 구성이나 연결 대상이 바뀌었습니다"}
+            return _execute_pose(current, {"skill_id": "__repeat_work_" + owner,
+                                          "targets": {joint: target}, "speed": speed,
+                                          "safety_inputs": inputs, "issue_token": True},
+                                 in_sequence=True, repeat_id=owner)
+
+        with _RUN_LOCK:
+            if any(i.instance_id in _RUN_FLAGS and (i.runtime_url or i.instance_id) == resource
+                   and not (sequence_owner and i.instance_id == instance.instance_id) for i in registry.all()):
+                raise ValueError("실행 중인 순서를 먼저 종료하세요")
+            job = repeat_work.start(instance.instance_id, resource, plan, move)
+            running = repeat_work.jobs[instance.instance_id]
+        if wait_for_completion:
+            with repeat_work.cv:
+                while running["state"] in ("running", "pausing", "paused", "canceling"):
+                    repeat_work.cv.wait(0.2)
+                job = dict(running)
+        return {"success": True, **job}
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@app.post("/api/repeat-work/control")
+def repeat_control(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    instance = _instance(str(payload["robot_id"])) if payload.get("robot_id") else _selected()
+    action = str(payload.get("action") or "")
+    try:
+        with _RUN_LOCK:
+            if action == "resume" and get_away_mode()["away_mode"]:
+                raise ValueError("부재 모드에서는 재개하지 않습니다")
+            job = repeat_work.control(instance.instance_id, action)
+            stop_target = copy(instance)
+            stop_target.runtime_url_value = job["resource"]
+            stopped = runtime.stop(stop_target) if action == "cancel" else None
+            if stopped is not None and not stopped.get("stopped"):
+                with repeat_work.cv:
+                    repeat_work.jobs[instance.instance_id]["error"] = "정지 응답을 확인하지 못했습니다"
+                job["error"] = "정지 응답을 확인하지 못했습니다"
+        return {"success": True, **job, "stop_result": stopped}
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+
+
 def _seconds_until(start_at: str) -> float:
     """HH:MM까지 남은 시간. 지난 시각이면 0(즉시)."""
     if not start_at:
@@ -1651,7 +1854,11 @@ def _run_sequence(robot_id: str, safety_inputs: dict[str, Any], start_at: str) -
                                               "issue_token": True,
                                               "speed": step.get("speed") or "slow"},
                                    in_sequence=True)
-            if "BLOCKED" in str(answer.get("verdict") or "") or answer.get("ok") is False:
+            if flags["cancel"]:
+                store.update_runtime(run_state="취소", multi_run={"state": "취소"})
+                _log(f"{instance.display_name}: 순서 실행 취소 ({index}단계 도중)", "s-log-err")
+                return
+            if "BLOCKED" in str(answer.get("verdict") or "") or answer.get("ok") is False or answer.get("success") is False:
                 store.update_runtime(run_state="실패", multi_run={"state": "실패"},
                                      last_error=str(answer.get("verdict") or ""))
                 _log(f"{instance.display_name}: {index}단계에서 멈춤 — "
@@ -1705,9 +1912,15 @@ def multi_execute(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
         return {"success": False, "runs": [], "blocked": not_ready, "error": reason}
 
     runs = []
+    with _RUN_LOCK:
+        for item in checked:
+            instance = _instance(item["robot_id"])
+            if _repeat_busy(instance) or instance.instance_id in _RUN_FLAGS:
+                return {"success": False, "error": "이미 진행 중인 작업을 먼저 종료하세요", "runs": [], "blocked": []}
+        for item in checked:
+            _RUN_FLAGS[item["robot_id"]] = {"cancel": False, "paused": False}
     for item in checked:
         robot_id = item["robot_id"]
-        _flags(robot_id).update({"cancel": False, "paused": False})
         thread = threading.Thread(target=_run_sequence, daemon=True,
                                   args=(robot_id, safety_inputs, item["start_at"]))
         thread.start()
@@ -1721,6 +1934,30 @@ def multi_execute(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
 ACTIVE_MULTI_STATES = ("running", "scheduled", "paused")
 
 
+def _signal_sequence(robot_id: str, action: str) -> None:
+    """취소·일시정지·재개를 **도는 스레드에** 전한다.
+
+    전에는 화면 표시(multi_run)만 바꾸고 _run_sequence가 읽는 깃발은 건드리지
+    않아, "취소"가 뜬 채 순서가 끝까지 돌았다. 순서 안의 반복 작업은 한 단계가
+    수십 번 움직이므로 반복 작업에도 같은 명령을 넘긴다 — 진행 중인 이동이
+    끝난 뒤 다음 이동 전에 선다.
+    """
+    with _RUN_LOCK:
+        flags = _RUN_FLAGS.get(robot_id)
+        if flags is not None:
+            if action == "cancel":
+                flags["cancel"] = True
+            else:
+                flags["paused"] = action == "pause"
+    # 일시정지는 따로 돌던 반복도 세운다(모든 런타임에 pause-hold가 나간다).
+    # 재개는 순서가 소유한 반복만 — 패널에서 사람이 멈춘 것을 대신 풀지 않는다.
+    if action == "pause" or flags is not None:
+        try:
+            repeat_work.control(robot_id, action)
+        except ValueError:
+            pass
+
+
 @app.post("/api/hangeul/multi-cancel")
 def multi_cancel(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     """진행·예약을 멈춘다. 무엇을 멈췄는지 화면이 셀 수 있게 목록으로 답한다."""
@@ -1731,6 +1968,7 @@ def multi_cancel(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
         if state not in ACTIVE_MULTI_STATES:
             continue
         store.update_runtime(run_state="대기", multi_run={"state": "취소"})
+        _signal_sequence(instance.instance_id, "cancel")
         cancelled.append(instance.instance_id)
     _log(f"다중 실행 취소: {len(cancelled)}건",
          "s-log-info" if cancelled else "s-log-err")
@@ -1776,6 +2014,7 @@ def multi_reset(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
 def multi_pause(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     for instance in registry.all():
         _store(instance.instance_id).update_runtime(multi_run={"state": "paused"})
+        _signal_sequence(instance.instance_id, "pause")
         runtime.forward(instance, "/api/pause-hold", {})
     _log("다중 실행 일시정지", "s-log-err")
     return {"success": True, "paused": True, "error": ""}
@@ -1787,6 +2026,7 @@ def multi_resume(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
         return {"success": False, "error": "부재 모드에서는 재개하지 않습니다"}
     for instance in registry.all():
         _store(instance.instance_id).update_runtime(multi_run={"state": "running"})
+        _signal_sequence(instance.instance_id, "resume")
     _log("다중 실행 재개", "s-log-ok")
     return {"success": True, "resumed": True, "error": ""}
 
@@ -1956,44 +2196,30 @@ def server_restart(payload: dict[str, Any] = Body(default_factory=dict)) -> dict
     import subprocess
     import sys
 
-    if not RESTART_SCRIPT.exists():
+    # 끄고 다시 띄우는 일은 **실행기**(tools/launcher.py reset)가 한다. Reset.bat ·
+    # run.sh 와 같은 길이다. 전에는 여기서 bash+pkill 로 끄고 run.sh 를 불렀는데
+    # (1) 윈도우에는 bash 가 없고 (2) 공개판 run.sh 는 콘솔만 띄워 **재시작을 누르면
+    # 런타임이 사라졌고** (3) 장치 번호가 바뀌면 런타임을 "건너뜀"으로 조용히
+    # 빠뜨렸다(2026-09-24). 실행기는 장치를 USB 신원으로 찾고, 못 띄운 것은 이유를
+    # data/run/last_report.json 에 남긴다 — 새 콘솔이 뜨면서 그것을 기록에 옮긴다.
+    with_runtimes = True            # 완전 초기화는 언제나 전부다 — 반쯤 되살리면 옛 코드가 남는다
+    if not LAUNCHER.exists():
         return {"ok": False, "success": False, "manual": True,
-                "error": f"실행 스크립트를 찾지 못했습니다: {RESTART_SCRIPT}",
-                "message": "터미널에서 ./run.sh 를 실행하세요"}
-
-    with_runtimes = bool(payload.get("restart_runtimes", True))
-    # 죽일 대상을 정규식으로 적는다. `[.]`은 점 하나를 뜻하면서, **이 명령줄
-    # 자신은 걸리지 않게** 한다 — 그냥 'hangeul_console.app'이라고 쓰면 이 조각을
-    # 실행하는 껍데기가 자기 자신을 죽인다.
-    patterns = ["hangeul_console[.]app"]
-    if with_runtimes:
-        patterns.insert(0, "hangeul_runtime[.]server")
-    alive = "|".join(patterns)
-
-    # 지금 프로세스가 죽은 **뒤에** 새로 띄워야 한다. 떨어져 나간 자식에게 시킨다 —
-    # 부모(콘솔)를 죽이는 일이므로 부모가 직접 할 수 없다.
-    steps = ["sleep 1"]
-    steps += [f"pkill -f '{p}' || true" for p in patterns]
-    steps += [
-        # **정말 죽을 때까지 기다린다.** uvicorn은 TERM을 받고도 몇 초를 더 답한다.
-        # 그 사이에 run.sh가 포트를 두드리면 "이미 떠 있음"으로 보고 건너뛴다 —
-        # 그러면 콘솔만 새 코드로 돌아오고 런타임은 아예 사라진다(실측).
-        f"for _ in $(seq 1 40); do pgrep -f '{alive}' >/dev/null 2>&1 || break; sleep 0.25; done",
-        *[f"pkill -9 -f '{p}' || true" for p in patterns],
-        "sleep 1",
-        f"cd {shlex.quote(str(PROJECT_ROOT))}",
-        f"exec {shlex.quote(str(RESTART_SCRIPT))} >> data/console.log 2>&1",
-    ]
+                "error": f"실행기를 찾지 못했습니다: {LAUNCHER}",
+                "message": "Reset.bat(윈도우) 또는 ./run.sh 를 실행하세요"}
+    args = [sys.executable, str(LAUNCHER), "reset", "--no-browser", "--delay", "1.5"]
+    kw: dict[str, Any] = {"cwd": str(PROJECT_ROOT), "stdin": subprocess.DEVNULL,
+                          "stdout": _launcher_log(), "stderr": subprocess.STDOUT}
+    if os.name == "nt":
+        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+    else:
+        kw["start_new_session"] = True
     try:
-        subprocess.Popen(["bash", "-c", "; ".join(steps)],
-                         start_new_session=True,
-                         stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL)
+        subprocess.Popen(args, **kw)
     except OSError as exc:
         return {"ok": False, "success": False, "manual": True,
                 "error": f"재시작을 시작하지 못했습니다: {exc}",
-                "message": "터미널에서 ./run.sh 를 실행하세요"}
+                "message": "Reset.bat(윈도우) 또는 ./run.sh 를 실행하세요"}
 
     _log("서버 재시작 요청 — 콘솔"
          + ("과 로봇 런타임을" if with_runtimes else "만") + " 다시 시작합니다", "s-log-err")

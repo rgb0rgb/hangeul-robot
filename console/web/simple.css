@@ -501,6 +501,11 @@ body {
   max-width: 420px;
   width: 100%;
   box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  /* 창이 화면보다 길면 창 안에서 넘긴다. 없으면 제목이 위로, 저장 단추가
+     아래로 잘려 누를 수 없다(세로 720px 화면의 자세 저장 창, 2026-09-24). */
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
 }
 .s-llm-modal {
   max-width: 960px;
@@ -670,6 +675,10 @@ body {
   color: #94a3b8;
   font-size: 0.76rem;
 }
+
+.s-repeat-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.s-repeat-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+#repeat-work-panel button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ─── 반응형 ─── */
 @media (max-width: 520px) {

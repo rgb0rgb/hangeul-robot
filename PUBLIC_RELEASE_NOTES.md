@@ -25,4 +25,3 @@ It intentionally excludes:
 - customer-specific or commercial integration documents
 - target tracking and arm-follow operational tuning
 
-The original private working tree remains at `/root/hangeul_robot`.

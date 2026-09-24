@@ -16,6 +16,8 @@ data/instances/*/
 # 이 컴퓨터에서만 뜻이 있는 것 — 화면 상태·장치 임대·막는 상태
 data/console_state.json
 data/leases/
+# 실행기(tools/launcher.py)의 pid·보고·기록 — 그 컴퓨터에서 무엇이 떴었는지
+data/run/
 # 정지·단선 래치는 **그 로봇 앞에 선 사람의 상태**다. 출하물에 넣지 않는다.
 data/safety_state_*.json
 # 주행거리계도 그 로봇 것이다. 남의 이력을 물려받으면 정비 주기가 틀어진다.

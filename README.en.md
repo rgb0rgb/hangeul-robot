@@ -9,6 +9,21 @@ It includes OpenManipulator-X and MyCobot 280 M5 adapters, so users can move rea
 verifying ports, limits, and stop behavior on their own hardware.
 It does not include customer-specific integrations or commercial operation tools.
 
+## Getting started on Windows (no technical knowledge needed)
+
+1. Click the green **Code** button above → **Download ZIP**, and unzip it.
+2. Double-click **`Setup.bat`** in the unzipped folder. It installs Python if needed
+   (internet required, a few minutes), downloads the dependencies, creates the desktop
+   shortcuts **[한글 로봇]** (start) and **[한글 로봇 초기화]** (full reset), and starts.
+3. When the browser opens, use **Add robot**. Plug the robot in over USB — the launcher
+   finds it by its USB identity, so you do not need to know the COM number.
+
+**When something goes wrong** — double-click **[한글 로봇 초기화]** (`Reset.bat`) or press
+**Settings → Full reset & restart**. Everything is stopped, leftover blocks (disconnect
+record, pause, device leases) are cleared, robots are found again and restarted, and you are
+told what started and what did not, with the reason. **The emergency stop is never cleared** —
+check the robot and press "Release stop" yourself.
+
 ## Included
 
 | Item | Status |
@@ -40,51 +55,30 @@ Machines without ROS 2 are unaffected (`rclpy` is imported only when this adapte
 Details (Korean): [docs/ROS2_CONNECTION_AND_ACTUATOR_SIMULATION_20260921_KR.md](docs/ROS2_CONNECTION_AND_ACTUATOR_SIMULATION_20260921_KR.md),
 [docs/ACTUATOR_PHYSICS_BENCH_20260921_KR.md](docs/ACTUATOR_PHYSICS_BENCH_20260921_KR.md)
 
-## Run
+## Run — Linux / WSL
 
 On Ubuntu/WSL, install Python 3, pip and the `python3-venv` package first.
 The installer creates a project-local `.venv`, including test dependencies.
 Hardware packages are optional for simulation; installation failures are reported.
 
-
 ```bash
 ./install/install.sh
-./run.sh
+./run.sh        # start the console and a runtime for every registered robot
+./restart.sh    # full reset and restart (the emergency stop is kept)
+./stop.sh       # stop everything
 ```
 
-Open:
+Open `http://127.0.0.1:8099`.
 
-```text
-http://127.0.0.1:8099
-```
+All of these, the Windows `.bat` files and the "Full reset" button call `tools/launcher.py`.
+It finds devices by the USB identity in the part descriptor (`usb_ids`) rather than by port
+number, attaches USB devices to WSL with `usbipd` when needed, and writes what started and
+what did not (with reasons) to `data/run/last_report.json`. Adding a robot in the console
+starts its runtime.
 
-Optional simulated runtime:
-
-```bash
-./install/run_runtime.sh arm_sim --simulate
-```
-
-Run the runtime in a second terminal. In the console, add a robot with `core_a`,
-`arm_sim` and `hand_sim` to read positions and test jog, absolute and gripper moves.
-The demo joint range is 0–4095 ticks. `--simulate` never opens physical hardware,
-even when a physical arm descriptor is selected.
-
-`run.sh` starts only the console. Physical control also requires a runtime.
-The demo and OMX both default to port 8601; do not run both on that port.
-
-Physical runtime examples:
-
-```bash
-./install/run_runtime.sh arm_omx
-./install/run_runtime.sh arm_mycobot
-```
-
-Override the device port when needed:
-
-```bash
-DEVICE=/dev/ttyUSB1 ./install/run_runtime.sh arm_omx
-DEVICE=/dev/ttyACM1 ./install/run_runtime.sh arm_mycobot
-```
+**Simulation:** add a robot with the simulated arm (`arm_sim`) to read positions and test jog,
+absolute and gripper moves without hardware. The demo joint range is 0–4095 ticks. The demo
+arm and OMX share the default port 8601; register only one of them.
 
 ## Test
 
@@ -95,7 +89,7 @@ DEVICE=/dev/ttyACM1 ./install/run_runtime.sh arm_mycobot
 Verified in this prepared public folder:
 
 ```text
-110 passed, 18 skipped
+300 passed, 19 skipped
 ```
 
 ## Excluded features

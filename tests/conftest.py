@@ -1,7 +1,39 @@
 """시험 공용 준비물."""
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 import pytest
+
+# 시험이 쓰는 로봇 구성. **사람이 등록한 install/robots/를 쓰지 않는다** —
+# 그 디렉터리는 .gitignore 대상이라 사람마다 다르다.
+FIXTURE_ROBOTS = Path(__file__).resolve().parent / "fixtures" / "robots"
+
+
+def install_fixture_robots(monkeypatch, tmp_path):
+    """시험용 로봇 구성을 tmp에 펼치고 콘솔이 그쪽만 보게 한다."""
+    from hangeul_console import app as app_mod
+    from hangeul_console.registry import Registry
+
+    robots = tmp_path / "robots"
+    robots.mkdir(parents=True, exist_ok=True)
+    for path in FIXTURE_ROBOTS.glob("*.json"):
+        shutil.copy2(path, robots / path.name)
+    monkeypatch.setattr(app_mod, "ROBOT_CONFIG_DIR", robots)
+    monkeypatch.setattr(app_mod, "registry", Registry(app_mod.MODULE_DIR, robots))
+    return robots
+
+
+def isolate_console_state(monkeypatch, tmp_path):
+    """사람의 화면 상태·작업·장치 임대를 건드리지 않는다."""
+    from hangeul_console import app as app_mod
+    from hangeul_console.device_lease import LeaseBook
+
+    monkeypatch.setattr(app_mod, "INSTANCE_DIR", tmp_path / "instances")
+    monkeypatch.setattr(app_mod, "CONSOLE_STATE", tmp_path / "console.json")
+    monkeypatch.setattr(app_mod, "TASK_PATH", tmp_path / "tasks.json")
+    monkeypatch.setattr(app_mod, "leases", LeaseBook(tmp_path / "leases"))
 
 
 @pytest.fixture
@@ -31,6 +63,8 @@ def never_touch_real_robot_data(tmp_path_factory, monkeypatch):
     주행거리계도 같다 — 시험이 민 거리가 실제 로봇의 이력에 더해지면
     정비 주기가 틀어진다.
     """
+    # 로봇 추가 시험이 실제 런타임을 띄우지 않게 한다(콘솔의 _ensure_runtimes).
+    monkeypatch.setenv("HANGEUL_NO_AUTOSTART", "1")
     try:
         from hangeul_runtime import server
     except Exception:                              # noqa: BLE001

@@ -1,0 +1,6 @@
+{
+  "instance_id": "young_mycobot",
+  "display_name": "MyCobot 로봇",
+  "runtime_url": "http://127.0.0.1:8602",
+  "modules": ["core_a", "arm_mycobot", "hand_mycobot"]
+}

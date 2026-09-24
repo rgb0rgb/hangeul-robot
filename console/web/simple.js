@@ -49,7 +49,7 @@ var I18N = {
     settingsWidth: '화면 크기',
     settingsRobot: '로봇 선택',
     settingsDevice: '연결 포트',
-    serverRestartHelp: '서버 재시작',
+    serverRestartHelp: '완전 초기화 후 재시작',
     selfCheck: '🔧 상태점검',
     selfCheckHome: '로봇을 기본 자세에 두고 시작한다',
     restampTitle: '🗂 옛 자세 이어받기',
@@ -276,7 +276,7 @@ var I18N = {
     settingsWidth: 'Width',
     settingsRobot: 'Robot',
     settingsDevice: 'Serial port',
-    serverRestartHelp: 'Restart Server',
+    serverRestartHelp: 'Full reset & restart',
     selfCheck: '🔧 Status check',
     selfCheckHome: 'Put the robot in its home pose before starting',
     restampTitle: '🗂 Carry over old poses',
@@ -598,6 +598,7 @@ function applyRobotJoints(payload) {
   }
   renderRobotJointUi();
   rebuildMicroMoveDefs();
+  if (window.refreshRepeatWork) window.refreshRepeatWork(true);
 }
 
 function allJointIds() {
@@ -3549,6 +3550,11 @@ function openSaveModal() {
   applyJointLimitUi();
   
   selectEmoji('💾');
+  if (window.setupRepeatPoseSave) {
+    var repeatPlan = null;
+    try { repeatPlan = window.readRepeatWorkPlan(); } catch (_) {}
+    window.setupRepeatPoseSave(repeatPlan);
+  }
 }
 
 function openEditModal(mv) {
@@ -3586,6 +3592,7 @@ function openEditModal(mv) {
   applyJointLimitUi();
   
   selectEmoji(mv.icon || '💾');
+  if (window.setupRepeatPoseSave) window.setupRepeatPoseSave(mv.motion_type === 'repeat' ? mv.repeat_work : null);
 }
 
 function selectEmoji(emoji) {
@@ -3634,10 +3641,13 @@ function submitSavePose() {
     descKr = descKr || descEn;
   }
 
+  var repeatPlan = null;
+  try { if (window.readRepeatPoseSave) repeatPlan = window.readRepeatPoseSave(); }
+  catch (err) { alertOrStyled(err.message); return; }
   var selectedJoints = [];
   var targets = {};
   var rangeErrors = [];
-  allJointIds().forEach(function(j) {
+  (repeatPlan ? [] : allJointIds()).forEach(function(j) {
     var chk = document.getElementById('chk-save-j' + j);
     if (chk && chk.checked) {
       selectedJoints.push(j);
@@ -3672,6 +3682,7 @@ function submitSavePose() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       skill_id: skillId,
+      instance_id: window.repeatPoseRobotId || (state.robotJoints || {}).instance_id,
       robot_model: getRobotModel(),
       device: getRobotDevice(),
       name_kr: nameKr,
@@ -3681,7 +3692,8 @@ function submitSavePose() {
       selected_joints: selectedJoints,
       icon: icon,
       targets: targets,
-      motion_type: saveAsMicro ? 'micro' : 'absolute',
+      motion_type: repeatPlan ? 'repeat' : (saveAsMicro ? 'micro' : 'absolute'),
+      repeat_work: repeatPlan,
       delay_sec: delaySec,
       micro_move_steps: saveAsMicro
         ? lastMicroMovePlan.steps
@@ -4352,39 +4364,75 @@ function recoverRobotUsbFromUi() {
 }
 
 function openServerRestartHelp() {
-  // 2026-07-18 (사용자 지시): 이전에는 안내 문구만 띄우고 실제로는 아무것도 하지
-  // 않았다("서버 재시작 버튼은 안전상 프로세스를 직접 종료하지 않습니다") — 사용자가
-  // 이를 지적해 실제 재시작(/api/server-restart)으로 교체한다. 서버는 재시작 전에
-  // 팔을 현재 위치에 먼저 고정(estop과 동일한 프리즈)한다.
+  // 완전 초기화 — 콘솔과 로봇 런타임을 모두 끄고, 남은 막힘(단선 기록·일시정지·
+  // 장치 임대)을 푼 뒤 다시 띄운다. 일은 tools/launcher.py reset 이 한다(Reset.bat 과 같은 길).
+  // 전에는 "새로고침하세요"만 남기고 결과를 보여 주지 않아, 런타임이 빠진 채로 떠도
+  // 사람은 알 수 없었다(2026-09-24). 이제 돌아올 때까지 기다렸다가 결과를 보여 준다.
+  // **비상 정지는 풀지 않는다** — 정지 해제는 사람이 로봇을 보고 한다.
   var confirmMsg = lang === 'ko'
-    ? '서버를 실제로 재시작합니다. 팔은 현재 위치에 고정된 뒤 서버 프로세스가 재시작되며, 재연결까지 몇 초 걸립니다. 계속할까요?'
-    : 'This will actually restart the server. The arm will be frozen in place, then the server process restarts (a few seconds of downtime). Continue?';
-  confirmOrStyled(confirmMsg, lang === 'ko' ? '서버 재시작' : 'Server Restart', true).then(function (confirmed) {
+    ? '콘솔과 로봇 프로그램을 모두 끄고 처음부터 다시 시작합니다. 팔에는 명령을 보내지 않지만, 연결이 다시 열릴 때 스스로 초기화되는 팔이 있으니 팔을 낮은 자세에 두고 누르세요. 30초쯤 걸립니다. 계속할까요?'
+    : 'Stop the console and robot programs and start everything again. No command is sent to the arm, but some controllers reset when the connection reopens, so rest the arm low first. Takes about 30 seconds. Continue?';
+  confirmOrStyled(confirmMsg, lang === 'ko' ? '완전 초기화 후 재시작' : 'Full reset and restart', true).then(function (confirmed) {
     if (!confirmed) return;
-    slog(lang === 'ko' ? '서버 재시작 요청 전송...' : 'Sending server restart request...', 's-log-info');
-    fetch(BACKEND + '/api/server-restart', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ operator: 'web_operator' })
-    })
-      .then(function (r) { return r.json().then(function (d) { d._status = r.status; return d; }); })
-      .then(function (data) {
-        if (data.success) {
-          slog(lang === 'ko' ? '서버 재시작 중 — 잠시 후 페이지를 새로고침하세요.' : 'Server restarting — refresh the page in a few seconds.', 's-log-ok');
-          alertOrStyled(lang === 'ko'
-            ? '서버가 재시작됩니다. 5~10초 기다린 뒤 브라우저를 새로고침하세요.'
-            : 'The server is restarting. Wait 5-10 seconds, then refresh the browser.');
-        } else {
-          slog((lang === 'ko' ? '서버 재시작 요청 실패: ' : 'Server restart request failed: ') + (data.error || data._status), 's-log-err');
-          alertOrStyled(lang === 'ko' ? '서버 재시작 요청이 거부되었습니다: ' + (data.error || '') : 'Server restart request was rejected: ' + (data.error || ''));
-        }
+    slog(lang === 'ko' ? '완전 초기화 요청 전송...' : 'Sending full reset request...', 's-log-info');
+    var before = '';
+    fetch(BACKEND + '/api/launcher-report').then(function (r) { return r.json(); })
+      .then(function (d) { before = d.finished_at || ''; })
+      .catch(function () {})
+      .then(function () {
+        return fetch(BACKEND + '/api/server-restart', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operator: 'web_operator' })
+        }).then(function (r) { return r.json(); });
       })
-      .catch(function () {
-        // 재시작이 실제로 시작되면 프로세스가 죽으면서 이 fetch 자체가 연결 오류로
-        // 실패하는 게 정상 동작이다(응답을 못 받고 소켓이 끊김) — 에러로 취급하지 않는다.
-        slog(lang === 'ko' ? '서버 재시작 진행 중(연결 끊김은 정상)' : 'Server restart in progress (connection drop is expected)', 's-log-ok');
-      });
+      .then(function (data) {
+        if (!data.success) {
+          slog((lang === 'ko' ? '재시작 요청 실패: ' : 'Restart request failed: ') + (data.error || ''), 's-log-err');
+          alertOrStyled((lang === 'ko' ? '재시작하지 못했습니다: ' : 'Could not restart: ') + (data.error || '') + '\n\n'
+            + (lang === 'ko' ? '바탕화면의 "한글 로봇 초기화"(Reset.bat)를 실행하세요.' : 'Run Reset.bat ("Hangeul Robot Reset" on the desktop).'));
+          return;
+        }
+        slog(lang === 'ko' ? '재시작 중 — 돌아올 때까지 기다립니다' : 'Restarting — waiting for it to come back', 's-log-ok');
+        waitForRestart(before, Date.now());
+      })
+      .catch(function () { waitForRestart(before, Date.now()); });
   });
+}
+
+function waitForRestart(before, startedAt) {
+  var words = lang === 'ko'
+    ? {started: '시작', already_running: '이미 떠 있음', no_device: '장치 없음', failed: '실패', port_busy: '포트 사용 중'}
+    : {started: 'started', already_running: 'already running', no_device: 'no device', failed: 'failed', port_busy: 'port busy'};
+  function done(report) {
+    var lines = (report.runtimes || []).map(function (row) {
+      return '· ' + (row.robots || []).join(', ') + ': ' + (words[row.state] || row.state)
+        + (row.message ? ' — ' + row.message : '');
+    });
+    (report.problems || []).forEach(function (p) { lines.push('· ' + p); });
+    if (!lines.length) lines.push(lang === 'ko' ? '· 등록된 로봇이 없습니다' : '· No robots registered');
+    var head = report.ok
+      ? (lang === 'ko' ? '다시 시작했습니다.' : 'Restarted.')
+      : (lang === 'ko' ? '다시 시작했지만 확인할 것이 있습니다.' : 'Restarted, but some items need attention.');
+    alertOrStyled(head + '\n\n' + lines.join('\n'));
+    setTimeout(function () { location.reload(); }, 300);
+  }
+  function tick() {
+    if (Date.now() - startedAt > 120000) {
+      alertOrStyled(lang === 'ko'
+        ? '2분이 지나도 돌아오지 않습니다. 바탕화면의 "한글 로봇 초기화"(Reset.bat)를 실행하세요.'
+        : 'Not back after 2 minutes. Run Reset.bat ("Hangeul Robot Reset" on the desktop).');
+      return;
+    }
+    fetch(BACKEND + '/api/launcher-report', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.finished_at && d.finished_at !== before && d.action === 'reset') done(d);
+        else setTimeout(tick, 1500);
+      })
+      .catch(function () { setTimeout(tick, 1500); });
+  }
+  setTimeout(tick, 3000);
 }
 
 function sendVoiceCommand() {

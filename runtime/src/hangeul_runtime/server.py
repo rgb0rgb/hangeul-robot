@@ -245,13 +245,33 @@ def _refresh_files() -> None:
         state.note(f"설정 다시 읽기 실패: {exc}", "stop")
 
 
+_COM_SEEN = {"at": 0.0, "names": set()}
+
+
 def _device_stamp() -> tuple | None:
-    """장치 파일의 신원. 로봇 전원을 껐다 켜면 이 값이 달라진다."""
+    """장치 파일의 신원. 로봇 전원을 껐다 켜면 이 값이 달라진다. 없으면 None.
+
+    윈도우의 COM 포트에는 장치 파일이 없다 — st_rdev 가 없어서 전에는 윈도우에서
+    런타임이 아예 뜨지 못했다(2026-09-24 윈도우 실기). 윈도우에서는 COM 목록에
+    있는지만 본다. 빠졌다 다시 생긴 것은 _ensure_link()가 '없음'을 한 번 기억해
+    두는 것으로 알아본다. 목록 조회는 1초에 한 번만 한다.
+    """
+    device = str(CONFIG.get("device") or "")
+    if os.name == "nt" and device.upper().startswith("COM"):
+        now = time.monotonic()
+        if now - _COM_SEEN["at"] > 1.0:
+            try:
+                from serial.tools import list_ports
+                _COM_SEEN["names"] = {p.device.upper() for p in list_ports.comports()}
+            except Exception:                    # noqa: BLE001 — 목록을 못 보면 있다고 둔다
+                _COM_SEEN["names"] = {device.upper()}
+            _COM_SEEN["at"] = now
+        return ("com", device.upper()) if device.upper() in _COM_SEEN["names"] else None
     try:
-        st = os.stat(CONFIG["device"])
+        st = os.stat(device)
     except OSError:
         return None
-    return (st.st_ino, st.st_rdev, st.st_ctime_ns)
+    return (st.st_ino, getattr(st, "st_rdev", 0), st.st_ctime_ns)
 
 
 def _ensure_link() -> None:
@@ -263,8 +283,20 @@ def _ensure_link() -> None:
     """
     if CONFIG.get("adapter") is None or getattr(CONFIG["adapter"], "simulated", False):
         return
-    stamp = _device_stamp()
-    if stamp == CONFIG.get("device_stamp"):
+    stamp, stored = _device_stamp(), CONFIG.get("device_stamp")
+    if stamp is None:
+        if stored is None and not CONFIG.get("device_lost"):
+            return                  # 처음부터 파일이 아닌 장치(ROS 2 주소, 시험용 가짜)
+        # **있던 장치가 없어졌다.** 전에는 여기서 없는 장치를 열려다 실패하고
+        # 지나가, 화면에는 "'NoneType' … reset_input_buffer"만 떴다. 사람이 확인할
+        # 곳을 말한다. '없어졌음'을 기억해 두어, 같은 이름으로 다시 나타나도
+        # (윈도우 COM3) 새로 연다.
+        CONFIG["device_lost"] = True
+        CONFIG["device_stamp"] = None
+        raise HardwareConnectionLostError(
+            f"USB 장치가 보이지 않습니다 ({CONFIG.get('device')}) — 케이블과 USB 연결"
+            "(WSL이면 usbipd attach)을 확인하세요. 다시 붙으면 저절로 이어집니다")
+    if stamp == stored and not CONFIG.get("device_lost"):
         return
     state.note("장치가 다시 꽂혔습니다 — 연결을 새로 엽니다")
     adapter = CONFIG["adapter"]
@@ -276,6 +308,7 @@ def _ensure_link() -> None:
         adapter.__enter__()
         time.sleep(1.0)
         CONFIG["device_stamp"] = stamp
+        CONFIG["device_lost"] = False
         _read_cache["value"] = {}
         state.disconnect_latched = False
         state.disconnect_reason = ""
@@ -1453,6 +1486,33 @@ def _save_limits_file() -> None:
                     encoding="utf-8")
 
 
+def _stable_device(device: str, by_id: str = "/dev/serial/by-id") -> str:
+    """/dev/ttyUSB0 같은 **번호** 대신 장치 **신원**으로 된 경로를 쓴다.
+
+    번호는 꽂힌 순서로 붙는다. USB가 잠깐 끊겼다 다시 붙을 때 이 런타임이 옛
+    ttyUSB0 을 쥐고 있으면 새 장치는 ttyUSB1 이 된다. 그러면 _ensure_link()는
+    없는 ttyUSB0 만 다시 열려다 실패하고, 런타임을 재시작할 때까지 모든 명령이
+    "NoneType … reset_input_buffer"로 끊겼다(2026-09-24 실측, OMX U2D2).
+    by-id 경로는 일련번호로 만들어져 다시 붙어도 같은 이름이므로, _ensure_link()가
+    바뀐 장치를 알아보고 스스로 다시 연다.
+
+    지금 그 번호가 가리키는 장치의 by-id 를 찾을 뿐, 없는 장치를 짐작하지 않는다.
+    """
+    if not device.startswith("/dev/tty"):
+        return device
+    try:
+        target = os.path.realpath(device)
+        if not os.path.exists(target):
+            return device
+        for name in sorted(os.listdir(by_id)):
+            link = os.path.join(by_id, name)
+            if os.path.realpath(link) == target:
+                return link
+    except OSError:
+        pass
+    return device
+
+
 def build(module_id: str, device: str, limits_path: str = "", *,
           modules_dir: str = "", simulate: bool = False,
           eye: str = "", eye_device: str = "", state_path: str = "",
@@ -1463,6 +1523,7 @@ def build(module_id: str, device: str, limits_path: str = "", *,
     root = Path(__file__).resolve().parents[3]
     CONFIG["modules_dir"] = modules_dir or str(root / "install" / "modules")
     CONFIG["module"] = module_id
+    device = _stable_device(device) if device and not simulate else device
     CONFIG["device"] = device
     CONFIG["descriptor"] = _load_descriptor(module_id)
     CONFIG["hand_joint"] = _load_hand(module_id)
@@ -1543,6 +1604,7 @@ def build(module_id: str, device: str, limits_path: str = "", *,
     CONFIG["adapter"] = adapter
     CONFIG["simulate_reason"] = ""
     CONFIG["device_stamp"] = _device_stamp()
+    CONFIG["device_lost"] = False
     state.note(f"로봇 연결 ({module_id} @ {device})")
     _refresh_attestation()          # 붙자마자 무엇이 응답하는지 본다
 

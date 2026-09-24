@@ -53,6 +53,17 @@
     "linux": "/dev/ttyACM0",
     "windows": "COM6"
   },
+  "usb_ids": [
+    {
+      "vid": "1a86",
+      "pid": "55d4"
+    },
+    {
+      "vid": "10c4",
+      "pid": "ea60"
+    }
+  ],
+  "usb_ids_note": "M5Stack Basic의 USB 직렬 칩(CH9102F, 구형은 CP2104) 제조사 공개값. 이 저장소에서 실측하지 않았다 — CP2104 값은 다른 장치와 겹칠 수 있다",
   "runtime_model": "mycobot_280_m5",
   "runtime_adapter": "mycobot_280_m5_adapter:MyCobot280M5Adapter",
   "unit": {

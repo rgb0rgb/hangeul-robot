@@ -21,6 +21,30 @@ Added simulated arm and camera adapters.
 Included OpenManipulator-X and MyCobot 280 M5 adapters with safety limit files.
 Excluded logs, private robot instances, customer-specific material, and commercial operation tools.
 
+## 처음 시작하기 — 윈도우 (컴퓨터를 잘 몰라도 됩니다)
+
+1. 이 페이지 위쪽의 초록색 **Code** 단추 → **Download ZIP** 으로 받아 압축을 풉니다.
+2. 풀린 폴더에서 **`Setup.bat`** 을 두 번 누릅니다.
+   파이썬이 없으면 자동으로 설치하고(인터넷 필요, 몇 분), 필요한 부품을 받은 뒤
+   바탕화면에 **[한글 로봇]** 과 **[한글 로봇 초기화]** 바로가기를 만들고 바로 시작합니다.
+3. 브라우저가 열리면 **로봇 추가**에서 로봇을 고릅니다. 로봇을 USB로 꽂아 두면
+   프로그램이 스스로 찾아 연결합니다(COM 번호를 몰라도 됩니다).
+
+다음부터는 바탕화면의 **[한글 로봇]** 만 두 번 누르면 됩니다.
+
+**오류가 나고 진행이 안 될 때** — 바탕화면의 **[한글 로봇 초기화]** 를 두 번 누르거나,
+화면의 **환경 설정 → 완전 초기화 후 재시작** 을 누릅니다. 모든 프로그램을 끄고, 남아 있던
+막힘(연결 끊김 기록·일시정지·장치 사용권)을 풀고, 로봇을 다시 찾아 처음부터 시작합니다.
+무엇이 켜졌고 무엇이 왜 안 켜졌는지(예: "장치 없음 — 케이블과 전원을 확인하세요")를 알려 줍니다.
+**비상 정지는 풀지 않습니다** — 로봇을 확인한 뒤 화면에서 직접 "정지 해제"를 누르세요.
+
+| 파일 | 하는 일 |
+|---|---|
+| `Setup.bat` | 처음 한 번 — 설치하고 시작 |
+| `Start.bat` | 시작 (바탕화면 [한글 로봇]) |
+| `Reset.bat` | 완전 초기화 후 다시 시작 (바탕화면 [한글 로봇 초기화]) |
+| `Stop.bat` | 모두 끄기 |
+
 ## 공개판에 들어 있는 것
 
 | 항목 | 상태 |
@@ -74,7 +98,6 @@ operator logs
 personal robot instances
 customer-specific or commercial integration documents
 target tracking and arm-follow operational tuning
-The original private working tree remains at /root/hangeul_robot
 
 ## 구조
 
@@ -89,12 +112,11 @@ tools/                   공개 전 검사와 보조 도구
 docs/                    공개판 문서
 ```
 
-## 설치
+## 설치 — 리눅스 / WSL
 
 Ubuntu/WSL에서는 Python 3, pip, venv가 필요합니다 (`python3-venv` 패키지).
 설치 스크립트는 프로젝트의 `.venv`에 의존성과 테스트 도구를 설치합니다.
 실물 로봇 패키지 설치가 실패하면 시뮬레이션만 사용할 수 있으며 이유가 표시됩니다.
-
 
 ```bash
 ./install/install.sh
@@ -102,44 +124,34 @@ Ubuntu/WSL에서는 Python 3, pip, venv가 필요합니다 (`python3-venv` 패�
 
 ## 실행
 
-콘솔:
-
 ```bash
-./run.sh
+./run.sh        # 시작 — 콘솔과 등록된 로봇의 런타임을 모두 띄운다
+./restart.sh    # 완전 초기화 후 다시 시작 (비상 정지는 그대로)
+./stop.sh       # 모두 끄기
 ```
 
-브라우저:
+브라우저: `http://127.0.0.1:8099`
 
-```text
-http://127.0.0.1:8099
-```
+세 스크립트와 윈도우의 bat 파일, 화면의 "완전 초기화" 단추는 모두 `tools/launcher.py`
+하나를 부릅니다. 실행기는
 
-시뮬레이션 런타임:
+- 등록된 로봇(`install/robots/*.json`)을 읽어 런타임을 포트별로 띄우고
+- 장치를 번호(`/dev/ttyUSB0`, `COM3`)가 아니라 부품 기술서의 USB 신원(`usb_ids`)으로 찾으며
+  (리눅스에서는 번호가 바뀌어도 이어지는 `/dev/serial/by-id/…` 경로로 엽니다)
+- WSL에서는 윈도우에 꽂힌 USB를 `usbipd`로 붙여 보고
+- 무엇을 띄웠고 무엇을 못 띄웠는지 이유와 함께 `data/run/last_report.json`에 남깁니다.
+
+화면에서 로봇을 추가하면 그 로봇의 런타임도 바로 띄웁니다.
+
+**시뮬레이션:** 콘솔의 **로봇 추가**에서 시뮬레이션 팔(`arm_sim`)을 고르면 실물 없이 현재 위치 읽기,
+미세 이동, 절대 이동을 시험할 수 있습니다. 가상 팔의 기본 관절 범위는 0~4095 ticks입니다.
+시뮬레이션 팔과 OMX는 기본 포트(8601)가 같으므로 한 번에 하나만 등록하세요.
+
+런타임을 손으로 띄울 수도 있습니다.
 
 ```bash
 ./install/run_runtime.sh arm_sim --simulate
-```
-
-위 명령은 별도 터미널에서 실행합니다. 콘솔의 **추가**에서 `core_a`,
-`arm_sim`, `hand_sim`으로 로봇을 등록하면 현재 위치 읽기, 미세 이동, 절대 이동을
-실물 없이 시험할 수 있습니다. 가상 팔의 기본 관절 범위는 0~4095 ticks입니다.
-`--simulate`는 실물 부품을 지정해도 USB 장치를 열지 않습니다.
-
-`run.sh`는 콘솔만 시작합니다. 실물 제어에는 아래 런타임도 별도로 실행해야 합니다.
-같은 포트(기본 8601)를 사용하는 시뮬레이션 팔과 OMX 런타임을 동시에 실행하지 마세요.
-
-실물 런타임 예:
-
-```bash
-./install/run_runtime.sh arm_omx
-./install/run_runtime.sh arm_mycobot
-```
-
-장치 포트가 다르면 환경변수로 지정합니다.
-
-```bash
 DEVICE=/dev/ttyUSB1 ./install/run_runtime.sh arm_omx
-DEVICE=/dev/ttyACM1 ./install/run_runtime.sh arm_mycobot
 ```
 
 ## 테스트
@@ -151,7 +163,7 @@ DEVICE=/dev/ttyACM1 ./install/run_runtime.sh arm_mycobot
 현재 공개 폴더 기준 확인:
 
 ```text
-110 passed, 18 skipped
+300 passed, 19 skipped
 ```
 
 ## 공개판에서 사용하지 않는 기능

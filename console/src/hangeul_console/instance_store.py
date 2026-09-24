@@ -79,6 +79,7 @@ class InstanceStore:
                 "delay_sec": pose.get("delay_sec", 0.0),
                 "motion_type": pose.get("motion_type") or "absolute",
                 "micro_move_steps": pose.get("micro_move_steps") or [],
+                "repeat_work": pose.get("repeat_work"),
             })
         return out
 

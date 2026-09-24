@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Hangeul Robot</title>
-<link rel="stylesheet" href="simple.css?v=34" />
+<link rel="stylesheet" href="simple.css?v=35" />
 <link rel="stylesheet" href="hangeul-grid.css?v=29" />
 <script>
 /* 이름은 옛 것이지만 뜻은 '이 창 전용 동작'이다. 시늉 모드라는 뜻이 아니다.
@@ -60,7 +60,7 @@ window.DEXTER_UI_TITLE = 'Hangeul Robot';
         <button class="s-settings-action" id="btn-settings-help" onclick="openHangeulSettingsHelp()">도움말</button>
         <button class="s-settings-action" id="btn-lang">English</button>
         <button class="s-settings-action" id="btn-restamp" onclick="openRestampModal()" title="지문 계산식이 바뀌기 전에 저장된 자세를 확인하고 이어받습니다. 부품이 진짜 바뀐 자세는 건드리지 않습니다.">🗂 옛 자세 이어받기</button>
-        <button class="s-settings-action" id="btn-server-restart-help" onclick="openServerRestartHelp()">서버 재시작</button>
+        <button class="s-settings-action" id="btn-server-restart-help" onclick="openServerRestartHelp()">완전 초기화 후 재시작</button>
         <button class="s-settings-action" id="btn-sec-monitoring" onclick="openSecurityModal()">보안 모니터링<span id="sec-alert-dot" class="s-sec-alert-badge" style="display:none;"></span></button>
         <button class="s-settings-action" id="btn-sllm-helper" onclick="openSllmModal()" title="말로 찾기 — 저장된 자세/순서 중에서 후보만 제안합니다. 실행은 기존 확인 절차를 그대로 거칩니다.">🧠 SLLM 도우미</button>
       </div>
@@ -263,6 +263,32 @@ window.DEXTER_UI_TITLE = 'Hangeul Robot';
           <button class="s-btn s-btn-primary" id="btn-micro-move-run" onclick="runMicroMoveMode()">실행</button>
         </div>
         <div class="s-micro-move-status" id="micro-move-status">대기 중</div>
+      </div>
+
+      <div class="s-micro-move-panel" id="repeat-work-panel">
+        <div class="s-micro-move-head"><div>
+          <strong id="repeat-title" data-repeat-ko="반복 작업 모드" data-repeat-en="Repeat work mode">반복 작업 모드</strong>
+          <div data-repeat-ko="A 이동 → 대기 → B 이동 → 대기가 1회입니다. 마지막은 B에서 끝납니다." data-repeat-en="One cycle: A → wait → B → wait. Ends at B.">A 이동 → 대기 → B 이동 → 대기가 1회입니다. 마지막은 B에서 끝납니다.</div>
+        </div></div>
+        <div class="s-micro-move-controls s-repeat-controls">
+          <label><span data-repeat-ko="관절 / 손" data-repeat-en="Joint / gripper">관절 / 손</span><select id="repeat-joint"></select></label>
+          <label><span id="repeat-a-label">A 위치</span><input id="repeat-a" type="number" step="any" /></label>
+          <label><span id="repeat-b-label">B 위치</span><input id="repeat-b" type="number" step="any" /></label>
+          <label><span data-repeat-ko="반복 횟수" data-repeat-en="Cycles">반복 횟수</span><input id="repeat-count" type="number" value="1" min="1" step="1" /></label>
+          <label><span data-repeat-ko="A 대기 (초)" data-repeat-en="Wait at A (s)">A 대기 (초)</span><input id="repeat-wait-a" type="number" value="0" min="0" step="0.1" /></label>
+          <label><span data-repeat-ko="B 대기 (초)" data-repeat-en="Wait at B (s)">B 대기 (초)</span><input id="repeat-wait-b" type="number" value="0" min="0" step="0.1" /></label>
+        </div>
+        <div class="s-repeat-actions">
+          <button class="s-btn s-btn-ghost" id="repeat-capture-a" data-repeat-ko="현재값 → A" data-repeat-en="Current → A">현재값 → A</button>
+          <button class="s-btn s-btn-ghost" id="repeat-capture-b" data-repeat-ko="현재값 → B" data-repeat-en="Current → B">현재값 → B</button>
+          <button class="s-btn s-btn-primary" id="repeat-start" data-repeat-ko="반복 시작" data-repeat-en="Start repeat">반복 시작</button>
+          <button class="s-btn" id="repeat-save" data-repeat-ko="반복 작업 자세 저장" data-repeat-en="Save repeat movement">반복 작업 자세 저장</button>
+          <button class="s-btn s-btn-ghost" id="repeat-pause" disabled data-repeat-ko="이동 후 일시정지" data-repeat-en="Pause after move">이동 후 일시정지</button>
+          <button class="s-btn s-btn-ghost" id="repeat-resume" disabled data-repeat-ko="재개" data-repeat-en="Resume">재개</button>
+          <button class="s-btn s-btn-stop" id="repeat-cancel" disabled data-repeat-ko="취소·정지" data-repeat-en="Cancel & stop">취소·정지</button>
+        </div>
+        <div class="s-micro-move-status" id="repeat-range"></div>
+        <div class="s-micro-move-status" id="repeat-status" role="status" aria-live="polite">대기 중</div>
       </div>
 
       <div style="margin-top: 15px; display: flex; gap: 10px;">
@@ -478,6 +504,18 @@ window.DEXTER_UI_TITLE = 'Hangeul Robot';
         <input type="radio" name="save-motion-type" id="save-motion-micro" value="micro" />
         <span id="save-motion-micro-label">미세 이동</span>
       </label>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+        <input type="radio" name="save-motion-type" id="save-motion-repeat" value="repeat" />
+        <span data-repeat-ko="반복 작업 함께 저장" data-repeat-en="Save with repeat settings">반복 작업 함께 저장</span>
+      </label>
+    </div>
+    <div id="save-repeat-editor" class="s-micro-move-controls s-repeat-controls" style="display:none;margin-bottom:14px;">
+      <label><span data-repeat-ko="관절 / 손" data-repeat-en="Joint / gripper">관절 / 손</span><select id="save-repeat-joint"></select></label>
+      <label><span data-repeat-ko="A 위치 (화면 단위)" data-repeat-en="Position A (display units)">A 위치 (화면 단위)</span><input id="save-repeat-a" type="number" step="any" /></label>
+      <label><span data-repeat-ko="B 위치 (화면 단위)" data-repeat-en="Position B (display units)">B 위치 (화면 단위)</span><input id="save-repeat-b" type="number" step="any" /></label>
+      <label><span data-repeat-ko="반복 횟수" data-repeat-en="Cycles">반복 횟수</span><input id="save-repeat-count" type="number" min="1" step="1" /></label>
+      <label><span data-repeat-ko="A 대기 (초)" data-repeat-en="Wait at A (s)">A 대기 (초)</span><input id="save-repeat-wait-a" type="number" min="0" step="0.1" /></label>
+      <label><span data-repeat-ko="B 대기 (초)" data-repeat-en="Wait at B (s)">B 대기 (초)</span><input id="save-repeat-wait-b" type="number" min="0" step="0.1" /></label>
     </div>
     
     <div style="display:flex; flex-direction:column; gap:10px; text-align:left; margin-bottom:20px;">
@@ -965,7 +1003,8 @@ window.DEXTER_UI_TITLE = 'Hangeul Robot';
   </div>
 </div>
 
-<script src="simple.js?v=63"></script>
+<script src="simple.js?v=66"></script>
 <script src="hangeul-grid.js?v=30"></script>
+<script src="repeat-work.js?v=2"></script>
 </body>
 </html>

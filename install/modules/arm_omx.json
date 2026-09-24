@@ -43,6 +43,13 @@
     "linux": "/dev/ttyUSB0",
     "windows": "COM3"
   },
+  "usb_ids": [
+    {
+      "vid": "0403",
+      "pid": "6014"
+    }
+  ],
+  "usb_ids_note": "ROBOTIS U2D2(FTDI FT232H). 2026-09-24 실기에서 확인. 실행기는 장치 번호(COM3·ttyUSB0) 대신 이 값으로 포트를 찾는다",
   "runtime_model": "openmanipulator_x",
   "runtime_adapter": "openmanipulator_x_arm_adapter:OpenManipulatorXArmAdapter",
   "unit": {
