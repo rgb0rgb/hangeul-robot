@@ -11,11 +11,14 @@ It does not include customer-specific integrations or commercial operation tools
 
 ## Getting started on Windows (no technical knowledge needed)
 
-1. Click the green **Code** button above → **Download ZIP**, and unzip it.
-2. Double-click **`Setup.bat`** in the unzipped folder. It installs Python if needed
+1. Click the green **Code** button above → **Download ZIP**.
+2. Unzip it **somewhere permanent**, e.g. `C:\HangeulRobot` — not a folder you tidy up later such as
+   Downloads, because the desktop shortcuts point here. Unzipping creates a `hangeul-robot-main`
+   folder; the setup and launch files are **inside it**.
+3. Double-click **`Setup.bat`** inside `hangeul-robot-main`. It installs Python if needed
    (internet required, a few minutes), downloads the dependencies, creates the desktop
    shortcuts **[한글 로봇]** (start) and **[한글 로봇 초기화]** (full reset), and starts.
-3. When the browser opens, use **Add robot**. Plug the robot in over USB — the launcher
+4. When the browser opens, use **Add robot**. Plug the robot in over USB — the launcher
    finds it by its USB identity, so you do not need to know the COM number.
 
 **When something goes wrong** — double-click **[한글 로봇 초기화]** (`Reset.bat`) or press
@@ -23,6 +26,14 @@ It does not include customer-specific integrations or commercial operation tools
 record, pause, device leases) are cleared, robots are found again and restarted, and you are
 told what started and what did not, with the reason. **The emergency stop is never cleared** —
 check the robot and press "Release stop" yourself.
+
+**Good to know**
+
+- **If you move or delete the folder**, the desktop shortcuts stop working. Run `Setup.bat` once
+  more from the new location to recreate them.
+- **`.bat` files inside a WSL folder (`\\wsl.localhost\...`) do not run when double-clicked** —
+  the Windows command prompt cannot run from such network paths. Unzip to a Windows folder as above.
+  For WSL, see "Run — Linux / WSL" below and [`install/windows/README.md`](install/windows/README.md).
 
 ## Included
 
