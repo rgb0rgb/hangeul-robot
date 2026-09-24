@@ -33,8 +33,24 @@ Excluded logs, private robot instances, customer-specific material, and commerci
 | 테스트 | 포함 |
 | OpenManipulator-X 어댑터 | 포함 |
 | MyCobot 280 M5 어댑터 | 포함 |
+| ROS 2 팔 어댑터 (ros2_control) | 포함 · 시뮬레이션만 검증, 실물 미검증 |
 | 기본 안전/전류/온도 제한 파일 | 포함 |
 | 고객/상업 연동 코드 | 제외 |
+
+## ROS 2 팔 연결 — 실물 미검증
+
+`arm_ros2`(ros2_control의 JointTrajectoryController) 어댑터가 들어 있습니다.
+**시뮬레이션에서만 검증했고, 실물 액추에이터에서는 아직 검증하지 않았습니다.**
+
+| 단계 | 결과 |
+|---|---|
+| 콘솔 → 런타임 → ROS 2 DDS → 가상 관절(GenericSystem) | 연결·취소·오류 처리 확인 |
+| Gazebo 1축 물리 모델(중력·관성·마찰, 토크 상한 20Nm/2Nm) | 도달/실패 구분 확인, 실패가 성공으로 표시되지 않음 |
+| 실물 로봇 | **미검증** |
+
+ROS 2가 설치되지 않은 환경에는 영향이 없습니다(`rclpy`는 이 어댑터를 열 때만 불러옵니다).
+자세한 기록: [docs/ROS2_CONNECTION_AND_ACTUATOR_SIMULATION_20260921_KR.md](docs/ROS2_CONNECTION_AND_ACTUATOR_SIMULATION_20260921_KR.md),
+[docs/ACTUATOR_PHYSICS_BENCH_20260921_KR.md](docs/ACTUATOR_PHYSICS_BENCH_20260921_KR.md)
 
 Public Release Notes
 This folder is a prepared public release candidate for GitHub.

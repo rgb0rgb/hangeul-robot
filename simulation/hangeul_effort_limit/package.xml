@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>hangeul_effort_limit</name><version>0.1.0</version>
+  <description>Simulation-only final effort saturation for actuator comparison.</description>
+  <maintainer email="maintainers@example.invalid">Hangeul Robot maintainers</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>gz_ros2_control</depend><depend>pluginlib</depend><depend>hardware_interface</depend>
+  <depend>gz_sim_vendor</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

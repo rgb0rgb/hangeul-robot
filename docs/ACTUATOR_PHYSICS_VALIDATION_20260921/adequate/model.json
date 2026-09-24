@@ -1,0 +1,25 @@
+{
+  "case": "adequate",
+  "provenance": "assumed: synthetic comparison fixture, not manufacturer specifications",
+  "parameters": {
+    "length_m": 0.4,
+    "link_mass_kg": 1.0,
+    "payload_mass_kg": 1.0,
+    "damping_nms_rad": 0.15,
+    "initial_position_rad": 1.5707963267948966,
+    "torque_limit_nm": 20.0
+  },
+  "horizontal_gravity_torque_nm": 5.886000000000001,
+  "inertia_at_pivot_kg_m2": 0.21360000000000004,
+  "controller": {
+    "p": 100.0,
+    "i": 60.0,
+    "d": 15.0,
+    "ff_velocity_scale": 0.0,
+    "i_clamp_min": -10.0,
+    "i_clamp_max": 10.0,
+    "antiwindup_strategy": "conditional_integration",
+    "u_clamp_min": -20.0,
+    "u_clamp_max": 20.0
+  }
+}

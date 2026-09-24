@@ -15,6 +15,7 @@ It includes:
 
 - OpenManipulator-X adapter
 - MyCobot 280 M5 adapter
+- ROS 2 arm adapter (ros2_control) — verified in simulation only, physically unverified
 - safety limit files for those supported arms
 
 It intentionally excludes:

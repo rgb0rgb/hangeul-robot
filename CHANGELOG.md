@@ -1,3 +1,11 @@
+# Unreleased
+
+- Add a ROS 2 arm adapter (`arm_ros2`, ros2_control JointTrajectoryController) with a bounded
+  transport: fresh joint states, action feedback/result/cancel, and stale-state refusal.
+- Add ROS 2 connection and one-axis Gazebo actuator physics verification tools, a torque-limit
+  plugin, and the recorded evidence.
+- **Verified in simulation only. Not yet tested on physical actuators.**
+
 # 0.2.1 — Public runtime fixes (2026-09-17)
 
 - Make the documented simulation command instantiate a virtual arm and hand.

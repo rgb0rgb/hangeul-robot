@@ -1,0 +1,6 @@
+{
+  "provenance": "assumed: synthetic comparison fixture, not manufacturer specifications",
+  "plant": {"length_m": 0.4, "link_mass_kg": 1.0, "payload_mass_kg": 1.0, "damping_nms_rad": 0.15, "initial_position_rad": 1.5707963267948966},
+  "controller": {"p": 100.0, "i": 60.0, "d": 15.0, "ff_velocity_scale": 0.0, "i_clamp_min": -10.0, "i_clamp_max": 10.0, "antiwindup_strategy": "conditional_integration"},
+  "cases": {"adequate": {"torque_limit_nm": 20.0}, "insufficient": {"torque_limit_nm": 2.0}}
+}

@@ -1,0 +1,7 @@
+<library path="hangeul_effort_limit">
+  <class name="hangeul_effort_limit/EffortLimitSystem"
+         type="hangeul_sim::EffortLimitSystem"
+         base_class_type="gz_ros2_control::GazeboSimSystemInterface">
+    <description>Clamps total commanded effort immediately before Gazebo write.</description>
+  </class>
+</library>

@@ -1,0 +1,77 @@
+{
+  "module_id": "arm_ros2",
+  "module_class": "arm",
+  "display_name": "ROS 2 팔 (ros2_control)",
+  "mount": "core_a.arm_b",
+  "joints": [
+    {
+      "id": "shoulder_pan_joint",
+      "role": "base"
+    },
+    {
+      "id": "shoulder_lift_joint",
+      "role": "joint"
+    },
+    {
+      "id": "elbow_joint",
+      "role": "joint"
+    },
+    {
+      "id": "wrist_joint",
+      "role": "joint"
+    }
+  ],
+  "value_unit": "millidegree",
+  "provides": [
+    "motion.move_joint",
+    "motion.move_pose",
+    "motion.read_pose",
+    "motion.fine_move"
+  ],
+  "requires": [
+    "bus.ethernet"
+  ],
+  "limits": {
+    "payload_g": 1000,
+    "mass_g": 5000,
+    "reach_mm": 500
+  },
+  "safety_class": "motion",
+  "runtime_url": "http://127.0.0.1:8605",
+  "device": {
+    "linux": "/joint_trajectory_controller",
+    "windows": "/joint_trajectory_controller"
+  },
+  "runtime_model": "ros2_control_jtc",
+  "runtime_adapter": "ros2_arm_adapter:Ros2ArmAdapter",
+  "unit": {
+    "kind": "millidegree",
+    "per_degree": 1000,
+    "center": 0,
+    "note": "ROS 2는 라디안 실수를 쓴다. 정수 파이프라인을 지키려고 밀리도(0.001°)로 둔다."
+  },
+  "auto_recover": {
+    "safe_without_operator": false,
+    "reason": "컨트롤러가 goal을 거절한 이유를 사람이 봐야 한다"
+  },
+  "model_aliases": [
+    "ros2",
+    "jtc"
+  ],
+  "hardware_evidence": {
+    "state": "virtual_integration_tested",
+    "ko": "ROS 2 가상 제어기 연결 검증 · 실물 액추에이터 미검증",
+    "en": "ROS 2 virtual controller integration tested; physical actuators unverified"
+  },
+  "ros2": {
+    "joint_states_topic": "/joint_states",
+    "state_timeout_s": 2.0,
+    "connect_timeout_s": 5.0,
+    "goal_timeout_margin_s": 3.0,
+    "velocity_deg_s_per_unit": 1.0,
+    "max_velocity_rad_s": 1.0,
+    "min_duration_s": 0.2,
+    "max_duration_s": 120.0,
+    "evidence_kind": "physical_unverified"
+  }
+}

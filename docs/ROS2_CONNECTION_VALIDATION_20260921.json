@@ -1,0 +1,449 @@
+{
+  "evidence_kind": "virtual_ros2_control",
+  "physical_hardware_tested": false,
+  "artifact_directory": "/tmp/hangeul_ros2_validation_w9corkc7",
+  "checks": {
+    "console_registration": {
+      "passed": true,
+      "evidence": {
+        "success": true,
+        "robot_id": "ros_probe",
+        "display_name": "ROS virtual arm",
+        "model": "",
+        "modules": [
+          "core_a",
+          "arm_ros2"
+        ],
+        "runtime_url": "http://127.0.0.1:45913",
+        "inherited_poses": 0,
+        "robot_family": "arm_ros2",
+        "robot_count": 1,
+        "problems": []
+      }
+    },
+    "fresh_named_joint_state": {
+      "passed": true,
+      "evidence": {
+        "success": true,
+        "present": {
+          "shoulder_pan_joint": 0,
+          "shoulder_lift_joint": 0,
+          "elbow_joint": 0,
+          "wrist_joint": 0
+        },
+        "hardware_preflight": {
+          "robot_model": "ros2_control_jtc",
+          "device": "/joint_trajectory_controller",
+          "read_only": true,
+          "passed": true,
+          "action_server_ready": true,
+          "joint_names": [
+            "shoulder_pan_joint",
+            "shoulder_lift_joint",
+            "elbow_joint",
+            "wrist_joint"
+          ],
+          "present": {
+            "shoulder_pan_joint": 0,
+            "shoulder_lift_joint": 0,
+            "elbow_joint": 0,
+            "wrist_joint": 0
+          }
+        }
+      }
+    },
+    "save_pose_a": {
+      "passed": true,
+      "evidence": {
+        "success": true,
+        "skill_id": "pose_a"
+      }
+    },
+    "save_pose_b": {
+      "passed": true,
+      "evidence": {
+        "success": true,
+        "skill_id": "pose_b"
+      }
+    },
+    "console_execute_pose_a": {
+      "passed": true,
+      "evidence": {
+        "success": true,
+        "verdict": "ACTUAL_MOTION_EXECUTED_ONCE",
+        "evidence_kind": "virtual",
+        "actual_hardware_called": false,
+        "targets": {
+          "shoulder_pan_joint": 10000,
+          "shoulder_lift_joint": -5000,
+          "elbow_joint": 0,
+          "wrist_joint": 0
+        },
+        "present": {
+          "shoulder_pan_joint": 9500,
+          "shoulder_lift_joint": -4750,
+          "elbow_joint": 0,
+          "wrist_joint": 0
+        },
+        "trajectory": {
+          "accepted": true,
+          "result_ok": true,
+          "canceled": false,
+          "status": 4,
+          "error_code": 0,
+          "error": "Goal successfully reached!",
+          "feedback_count": 3,
+          "success": true,
+          "settled": true,
+          "actual_positions": {
+            "shoulder_pan_joint": 9500,
+            "shoulder_lift_joint": -4750,
+            "elbow_joint": 0,
+            "wrist_joint": 0
+          },
+          "errors_deg": {
+            "shoulder_pan_joint": 0.5,
+            "shoulder_lift_joint": 0.25,
+            "elbow_joint": 0.0,
+            "wrist_joint": 0.0
+          },
+          "label": "pose_a",
+          "duration_s": 0.2,
+          "evidence_kind": "virtual"
+        }
+      }
+    },
+    "console_execute_pose_b": {
+      "passed": true,
+      "evidence": {
+        "success": true,
+        "verdict": "ACTUAL_MOTION_EXECUTED_ONCE",
+        "evidence_kind": "virtual",
+        "actual_hardware_called": false,
+        "targets": {
+          "shoulder_pan_joint": 20000,
+          "shoulder_lift_joint": 10000,
+          "elbow_joint": -10000,
+          "wrist_joint": 5000
+        },
+        "present": {
+          "shoulder_pan_joint": 20000,
+          "shoulder_lift_joint": 10000,
+          "elbow_joint": -10000,
+          "wrist_joint": 5000
+        },
+        "trajectory": {
+          "accepted": true,
+          "result_ok": true,
+          "canceled": false,
+          "status": 4,
+          "error_code": 0,
+          "error": "Goal successfully reached!",
+          "feedback_count": 9,
+          "success": true,
+          "settled": true,
+          "actual_positions": {
+            "shoulder_pan_joint": 20000,
+            "shoulder_lift_joint": 10000,
+            "elbow_joint": -10000,
+            "wrist_joint": 5000
+          },
+          "errors_deg": {
+            "shoulder_pan_joint": 0.0,
+            "shoulder_lift_joint": 0.0,
+            "elbow_joint": 0.0,
+            "wrist_joint": 0.0
+          },
+          "label": "pose_b",
+          "duration_s": 0.3,
+          "evidence_kind": "virtual"
+        }
+      }
+    },
+    "save_sequence": {
+      "passed": true,
+      "evidence": {
+        "success": true,
+        "robot_id": "ros_probe",
+        "name": "virtual_two_poses",
+        "step_count": 2,
+        "saved_sequence_count": 1
+      }
+    },
+    "start_sequence": {
+      "passed": true,
+      "evidence": {
+        "success": true,
+        "runs": [
+          {
+            "robot_id": "ros_probe",
+            "display_name": "ROS virtual arm",
+            "start_at": "",
+            "scheduled": false
+          }
+        ],
+        "blocked": []
+      }
+    },
+    "complete_sequence": {
+      "passed": true,
+      "evidence": {
+        "state": "완료"
+      }
+    },
+    "range_blocked": {
+      "passed": true,
+      "evidence": {
+        "success": false,
+        "verdict": "BLOCKED_SAFETY_PRECHECK_FAILED",
+        "reason_code": "out_of_range",
+        "blocked_reasons": [
+          "관절 shoulder_pan_joint 목표 120000이 허용 범위 -90000~90000 밖입니다"
+        ],
+        "error": "관절 shoulder_pan_joint 목표 120000이 허용 범위 -90000~90000 밖입니다",
+        "actual_hardware_called": false
+      }
+    },
+    "unknown_joint_blocked": {
+      "passed": true,
+      "evidence": {
+        "success": false,
+        "verdict": "BLOCKED_SAFETY_PRECHECK_FAILED",
+        "reason_code": "unknown_joint",
+        "blocked_reasons": [
+          "Unknown or disabled joint: missing_joint"
+        ],
+        "error": "Unknown or disabled joint: missing_joint",
+        "actual_hardware_called": false
+      }
+    },
+    "cancel_inflight": {
+      "passed": true,
+      "evidence": {
+        "stop_seconds": 0.013151620005373843,
+        "stop": {
+          "success": true,
+          "results": [
+            {
+              "robot_id": "ros_probe",
+              "stopped": true,
+              "detail": {
+                "success": true,
+                "stopped_hardware": true,
+                "estop_active": true,
+                "estop_reason": "운영자 요청",
+                "disconnect_latched": false,
+                "disconnect_reason": "",
+                "paused": false,
+                "away_mode": false,
+                "persist_error": ""
+              }
+            }
+          ],
+          "error": "",
+          "warning": ""
+        },
+        "move": {
+          "success": false,
+          "verdict": "CANCELED",
+          "evidence_kind": "virtual",
+          "actual_hardware_called": false,
+          "error": "",
+          "trajectory": {
+            "accepted": true,
+            "result_ok": false,
+            "canceled": true,
+            "status": 5,
+            "error_code": 0,
+            "error": "",
+            "feedback_count": 34,
+            "success": false,
+            "settled": false,
+            "actual_positions": {
+              "shoulder_pan_joint": 12600,
+              "shoulder_lift_joint": 10000,
+              "elbow_joint": -10000,
+              "wrist_joint": 5000
+            },
+            "errors_deg": {
+              "shoulder_pan_joint": 82.6,
+              "shoulder_lift_joint": 0.0,
+              "elbow_joint": 0.0,
+              "wrist_joint": 0.0
+            },
+            "label": "move_to",
+            "duration_s": 9.0,
+            "evidence_kind": "virtual"
+          },
+          "present": {
+            "shoulder_pan_joint": 12600,
+            "shoulder_lift_joint": 10000,
+            "elbow_joint": -10000,
+            "wrist_joint": 5000
+          },
+          "target": -70000
+        }
+      }
+    },
+    "estop_blocks_new_move": {
+      "passed": true,
+      "evidence": {
+        "success": false,
+        "verdict": "BLOCKED_SAFETY_PRECHECK_FAILED",
+        "reason_code": "estop_latched",
+        "blocked_reasons": [
+          "긴급 정지가 걸려 있습니다 (운영자 요청). 해제 후 다시 시도하세요"
+        ],
+        "error": "긴급 정지가 걸려 있습니다 (운영자 요청). 해제 후 다시 시도하세요",
+        "actual_hardware_called": false
+      }
+    },
+    "restart_preserves_estop": {
+      "passed": true,
+      "evidence": {
+        "ok": true,
+        "estop_active": true,
+        "estop_reason": "운영자 요청",
+        "disconnect_latched": false,
+        "disconnect_reason": "",
+        "paused": false,
+        "away_mode": false,
+        "persist_error": "",
+        "module": "arm_ros2",
+        "device": "/joint_trajectory_controller",
+        "simulated": false,
+        "evidence_kind": "virtual",
+        "simulate_reason": "",
+        "parts": {
+          "arm": {
+            "responding": true,
+            "evidence": "action_server"
+          },
+          "hand": {
+            "responding": null,
+            "evidence": "none",
+            "reason": "이번 ROS 2 범위에는 손이 없습니다"
+          }
+        },
+        "parts_checked_at": "2026-09-21T10:08:48",
+        "parts_error": "",
+        "parts_reason": "",
+        "active": true
+      }
+    },
+    "explicit_recovery": {
+      "passed": true,
+      "evidence": {
+        "success": true,
+        "message": "🚨 긴급 정지가 해제되었습니다.",
+        "error": "",
+        "effective_device": "/joint_trajectory_controller",
+        "disconnect_latched": false,
+        "disconnect_recovery": {
+          "attempted": true,
+          "joints": {
+            "attempted": true,
+            "resumed": true
+          },
+          "present": {
+            "shoulder_pan_joint": 12600,
+            "shoulder_lift_joint": 10000,
+            "elbow_joint": -10000,
+            "wrist_joint": 5000
+          },
+          "held": true
+        },
+        "estop_active": false,
+        "estop_reason": "",
+        "disconnect_reason": "",
+        "paused": false,
+        "away_mode": false,
+        "persist_error": ""
+      }
+    },
+    "execute_after_recovery": {
+      "passed": true,
+      "evidence": {
+        "success": true,
+        "verdict": "ACTUAL_MOTION_EXECUTED_ONCE",
+        "evidence_kind": "virtual",
+        "actual_hardware_called": false,
+        "targets": {
+          "shoulder_pan_joint": 10000,
+          "shoulder_lift_joint": -5000,
+          "elbow_joint": 0,
+          "wrist_joint": 0
+        },
+        "present": {
+          "shoulder_pan_joint": 10000,
+          "shoulder_lift_joint": -5000,
+          "elbow_joint": 0,
+          "wrist_joint": 0
+        },
+        "trajectory": {
+          "accepted": true,
+          "result_ok": true,
+          "canceled": false,
+          "status": 4,
+          "error_code": 0,
+          "error": "Goal successfully reached!",
+          "feedback_count": 10,
+          "success": true,
+          "settled": true,
+          "actual_positions": {
+            "shoulder_pan_joint": 10000,
+            "shoulder_lift_joint": -5000,
+            "elbow_joint": 0,
+            "wrist_joint": 0
+          },
+          "errors_deg": {
+            "shoulder_pan_joint": 0.0,
+            "shoulder_lift_joint": 0.0,
+            "elbow_joint": 0.0,
+            "wrist_joint": 0.0
+          },
+          "label": "pose_a",
+          "duration_s": 0.3,
+          "evidence_kind": "virtual"
+        }
+      }
+    },
+    "ros_goal_rejected": {
+      "passed": true,
+      "evidence": {
+        "accepted": false,
+        "result_ok": false,
+        "error": "ROS goal rejected"
+      }
+    },
+    "injected_timeout_cancels": {
+      "passed": true,
+      "evidence": {
+        "accepted": true,
+        "result_ok": false,
+        "timed_out": true,
+        "error": "Injected result timeout"
+      }
+    },
+    "timeout_requires_recovery": {
+      "passed": true,
+      "evidence": {
+        "accepted": false,
+        "result_ok": false,
+        "canceled": true,
+        "error": "ROS transport stopped; explicit recovery required"
+      }
+    },
+    "timeout_cancel_completed": {
+      "passed": true,
+      "evidence": {
+        "active_goal_cleared": true
+      }
+    },
+    "stale_state_rejected": {
+      "passed": true,
+      "evidence": "Missing or stale ROS joint state: shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_joint"
+    }
+  },
+  "passed": true
+}

@@ -21,8 +21,24 @@ It does not include customer-specific integrations or commercial operation tools
 | Public tests | Included |
 | OpenManipulator-X adapter | Included |
 | MyCobot 280 M5 adapter | Included |
+| ROS 2 arm adapter (ros2_control) | Included · simulation only, physically unverified |
 | Basic safety/current/temperature limit files | Included |
 | Customer or commercial integrations | Excluded |
+
+## ROS 2 arm — physically unverified
+
+An `arm_ros2` adapter for the ros2_control JointTrajectoryController is included.
+**It has been verified in simulation only; it has not been tested on physical actuators.**
+
+| Stage | Result |
+|---|---|
+| Console → runtime → ROS 2 DDS → virtual joints (GenericSystem) | Connection, cancel, and error handling checked |
+| Gazebo one-axis physics model (gravity, inertia, friction; 20 Nm / 2 Nm torque limits) | Reach vs. failure distinguished; failure is never shown as success |
+| Physical robot | **Not verified** |
+
+Machines without ROS 2 are unaffected (`rclpy` is imported only when this adapter is opened).
+Details (Korean): [docs/ROS2_CONNECTION_AND_ACTUATOR_SIMULATION_20260921_KR.md](docs/ROS2_CONNECTION_AND_ACTUATOR_SIMULATION_20260921_KR.md),
+[docs/ACTUATOR_PHYSICS_BENCH_20260921_KR.md](docs/ACTUATOR_PHYSICS_BENCH_20260921_KR.md)
 
 ## Run
 

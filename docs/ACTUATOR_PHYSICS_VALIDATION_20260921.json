@@ -1,0 +1,235 @@
+{
+  "evidence_kind": "gazebo_physics",
+  "physical_hardware_tested": false,
+  "artifact_directory": "docs/ACTUATOR_PHYSICS_VALIDATION_20260921",
+  "cases": {
+    "adequate": {
+      "model": {
+        "case": "adequate",
+        "provenance": "assumed: synthetic comparison fixture, not manufacturer specifications",
+        "parameters": {
+          "length_m": 0.4,
+          "link_mass_kg": 1.0,
+          "payload_mass_kg": 1.0,
+          "damping_nms_rad": 0.15,
+          "initial_position_rad": 1.5707963267948966,
+          "torque_limit_nm": 20.0
+        },
+        "horizontal_gravity_torque_nm": 5.886000000000001,
+        "inertia_at_pivot_kg_m2": 0.21360000000000004,
+        "controller": {
+          "p": 100.0,
+          "i": 60.0,
+          "d": 15.0,
+          "ff_velocity_scale": 0.0,
+          "i_clamp_min": -10.0,
+          "i_clamp_max": 10.0,
+          "antiwindup_strategy": "conditional_integration",
+          "u_clamp_min": -20.0,
+          "u_clamp_max": 20.0
+        }
+      },
+      "result": {
+        "success": true,
+        "verdict": "ACTUAL_MOTION_EXECUTED_ONCE",
+        "evidence_kind": "virtual",
+        "actual_hardware_called": false,
+        "targets": {
+          "bench_joint": -10000
+        },
+        "present": {
+          "bench_joint": -9660
+        },
+        "trajectory": {
+          "accepted": true,
+          "result_ok": true,
+          "canceled": false,
+          "status": 4,
+          "error_code": 0,
+          "error": "Goal successfully reached!",
+          "feedback_count": 93,
+          "success": true,
+          "settled": true,
+          "actual_positions": {
+            "bench_joint": -9660
+          },
+          "errors_deg": {
+            "bench_joint": 0.34
+          },
+          "label": "loaded_pose",
+          "duration_s": 2.0,
+          "evidence_kind": "virtual"
+        }
+      },
+      "final_error_deg": 0.28043243550332164,
+      "integration": {
+        "sequence": {
+          "state": "완료"
+        },
+        "cancel": {
+          "stop": {
+            "success": true,
+            "results": [
+              {
+                "robot_id": "physics_bench",
+                "stopped": true,
+                "detail": {
+                  "success": true,
+                  "stopped_hardware": true,
+                  "estop_active": true,
+                  "estop_reason": "운영자 요청",
+                  "disconnect_latched": false,
+                  "disconnect_reason": "",
+                  "paused": false,
+                  "away_mode": false,
+                  "persist_error": ""
+                }
+              }
+            ],
+            "error": "",
+            "warning": ""
+          },
+          "move": {
+            "success": false,
+            "verdict": "CANCELED",
+            "evidence_kind": "virtual",
+            "actual_hardware_called": false,
+            "error": "",
+            "trajectory": {
+              "accepted": true,
+              "result_ok": false,
+              "canceled": true,
+              "status": 5,
+              "error_code": 0,
+              "error": "",
+              "feedback_count": 266,
+              "success": false,
+              "settled": false,
+              "actual_positions": {
+                "bench_joint": -17794
+              },
+              "errors_deg": {
+                "bench_joint": 37.794
+              },
+              "label": "move_to",
+              "duration_s": 3.9695,
+              "evidence_kind": "virtual"
+            },
+            "present": {
+              "bench_joint": -17794
+            },
+            "target": 20000
+          }
+        }
+      },
+      "mean_final_applied_torque_nm": 5.801885908365289,
+      "analytic_final_gravity_torque_nm": 5.801855613821742,
+      "peak_applied_effort_nm": 13.08996938995747,
+      "peak_requested_effort_nm": 13.08996938995747,
+      "samples": 956,
+      "saturation_fraction": 0.0,
+      "checks": {
+        "state_samples": true,
+        "simulation_clock_advances": true,
+        "console_registration": true,
+        "pose_saved": true,
+        "virtual_evidence": true,
+        "effort_within_limit": true,
+        "expected_outcome": true,
+        "position_outcome": true,
+        "static_gravity_consistency": true,
+        "saved_sequence_completed": true,
+        "moving_action_canceled": true,
+        "new_move_blocked_after_stop": true
+      },
+      "passed": true
+    },
+    "insufficient": {
+      "model": {
+        "case": "insufficient",
+        "provenance": "assumed: synthetic comparison fixture, not manufacturer specifications",
+        "parameters": {
+          "length_m": 0.4,
+          "link_mass_kg": 1.0,
+          "payload_mass_kg": 1.0,
+          "damping_nms_rad": 0.15,
+          "initial_position_rad": 1.5707963267948966,
+          "torque_limit_nm": 2.0
+        },
+        "horizontal_gravity_torque_nm": 5.886000000000001,
+        "inertia_at_pivot_kg_m2": 0.21360000000000004,
+        "controller": {
+          "p": 100.0,
+          "i": 60.0,
+          "d": 15.0,
+          "ff_velocity_scale": 0.0,
+          "i_clamp_min": -10.0,
+          "i_clamp_max": 10.0,
+          "antiwindup_strategy": "conditional_integration",
+          "u_clamp_min": -2.0,
+          "u_clamp_max": 2.0
+        }
+      },
+      "result": {
+        "success": false,
+        "verdict": "TRAJECTORY_FAILED",
+        "evidence_kind": "virtual",
+        "actual_hardware_called": false,
+        "error": "Aborted due to goal_time_tolerance exceeding by 8.005000 seconds",
+        "trajectory": {
+          "accepted": true,
+          "result_ok": false,
+          "canceled": false,
+          "status": 6,
+          "error_code": -5,
+          "error": "Aborted due to goal_time_tolerance exceeding by 8.005000 seconds",
+          "feedback_count": 211,
+          "success": false,
+          "settled": false,
+          "actual_positions": {
+            "bench_joint": 70473
+          },
+          "errors_deg": {
+            "bench_joint": 80.473
+          },
+          "label": "loaded_pose",
+          "duration_s": 2.0,
+          "evidence_kind": "virtual"
+        },
+        "present": {
+          "bench_joint": 70473
+        }
+      },
+      "final_error_deg": 81.24767885732889,
+      "integration": {},
+      "mean_final_applied_torque_nm": 1.9691549662862549,
+      "analytic_final_gravity_torque_nm": 1.9035769712086001,
+      "peak_applied_effort_nm": 2.0,
+      "peak_requested_effort_nm": 2.0000000000000004,
+      "samples": 2069,
+      "saturation_fraction": 0.957950700821653,
+      "checks": {
+        "state_samples": true,
+        "simulation_clock_advances": true,
+        "console_registration": true,
+        "pose_saved": true,
+        "virtual_evidence": true,
+        "effort_within_limit": true,
+        "expected_outcome": true,
+        "position_outcome": true,
+        "saturation_observed": true,
+        "action_aborted_for_goal_tolerance": true
+      },
+      "passed": true
+    }
+  },
+  "passed": true,
+  "generated_at": "2026-09-21T22:16:04.686150+09:00",
+  "ros_distro": "jazzy",
+  "source_sha256": {
+    "tools/actuator_bench.py": "bfe14a06773b9b1c0f5a308faa110705019d5f010a5f7ed7b13ed698500cef3f",
+    "tools/verify_actuator_physics.py": "418986caff75551cf6660804d3c1cdd26a504892774d7492a30a3058c388df6c",
+    "tools/gazebo_actuator_bench.launch.py": "d4a05dcf302d7350423a65884b42d4e04955ec26c06199009deb822a890366ff",
+    "simulation/hangeul_effort_limit/src/effort_limit.cpp": "ae7c53b64e9504e56539703218cb54db81f0a746e559d8f6f052ed083e9e9d87"
+  }
+}
