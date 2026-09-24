@@ -17,8 +17,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import contextlib
 import threading
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,7 @@ from typing import Any
 from fastapi import Body, FastAPI, HTTPException
 
 from . import safety
+from .usage_log import UsageLog
 from .hardware_errors import HardwareConnectionLostError, InFlightSafetyViolationError
 from .hardware_port_lock import HardwarePortBusyError, HardwarePortLock
 
@@ -33,6 +36,43 @@ from .hardware_port_lock import HardwarePortBusyError, HardwarePortLock
 # J1 자리에 J4의 각도가 실려 오던 것이 이것이다. 화면은 자세를 계속 읽고,
 # 그 사이에 사람이 미세 이동을 누르면 두 대화가 겹친다.
 SERIAL_LOCK = threading.RLock()
+
+# 한 번에 한 가지 일만 시킨다.
+#
+# SERIAL_LOCK은 **명령 한 건씩**만 줄 세운다. 그래서 순서 실행이 도는 중에
+# 상태점검을 누르면 둘이 번갈아 나가고, 팔이 두 목표 사이를 오간다
+# (2026-09-24 전수조사에서 발견 — 콘솔도 런타임도 막지 않고 있었다).
+#
+# **정지 계열은 이 문을 쓰지 않는다.** 멈추는 일이 무언가 끝나기를 기다리면
+# 그것은 멈춤이 아니다.
+_JOB: dict[str, Any] = {"name": "", "since": 0.0}
+_JOB_LOCK = threading.Lock()
+
+
+class _Busy(Exception):
+    def __init__(self, name: str):
+        super().__init__(name)
+        self.name = name
+
+
+@contextlib.contextmanager
+def _exclusive(name: str):
+    """이 일이 도는 동안 다른 동작 요청을 받지 않는다."""
+    with _JOB_LOCK:
+        if _JOB["name"]:
+            raise _Busy(_JOB["name"])
+        _JOB.update({"name": name, "since": time.monotonic()})
+    try:
+        yield
+    finally:
+        with _JOB_LOCK:
+            _JOB.update({"name": "", "since": 0.0})
+
+
+def _busy_answer(running: str) -> dict[str, Any]:
+    return {"success": False, "verdict": "BLOCKED_BUSY",
+            "blocked_reasons": [f"'{running}'가 도는 중입니다. 끝나고 다시 하세요"],
+            "running_job": running, "actual_hardware_called": False}
 
 # 같은 값을 짧은 사이에 여러 번 물어보지 않는다. 컨트롤러에 부담을 준다.
 READ_CACHE_SEC = 0.25
@@ -75,7 +115,18 @@ def _note_result(ok: bool) -> None:
 # 같은 컴퓨터 안에서 자기 자신에게 문을 잠그는 일이었다. 사람이 키를 만들고
 # 넣어야 하는 단계만 남고 막아주는 것은 없었다. 밖에 열게 되는 날에는 키가
 # 아니라 제대로 된 인증을 새로 놓아야 한다.
-app = FastAPI(title="Hangeul Robot Runtime")
+@asynccontextmanager
+async def _lifespan(app):
+    try:
+        yield
+    finally:
+        adapter = CONFIG.get("adapter")
+        if adapter is not None:
+            adapter.__exit__(None, None, None)
+            CONFIG["adapter"] = None
+
+
+app = FastAPI(title="Hangeul Robot Runtime", lifespan=_lifespan)
 state = safety.SafetyState()
 CONFIG: dict[str, Any] = {
     "module": None,          # 부품 ID
@@ -90,6 +141,50 @@ CONFIG: dict[str, Any] = {
     "file_stamp": None,
     "device_stamp": None,
 }
+
+# 누적 사용 기록 — **주행거리계**다. 서보에는 그런 게 없으므로 우리가 센다.
+# 교체 주기를 알고 바꾸는 것과, 모르고 고장 나서 제조사에 클레임하는 것은
+# 다른 일이다. 한 줄도 쌓지 않으면 아무 말도 할 수 없다.
+usage = UsageLog()
+_LAST_POSE: dict[str, int] = {}        # 로봇 단위. 이동량을 셈하는 기준점이다
+
+
+def _record_usage(targets: dict[str, Any], seconds: float, label: str) -> None:
+    """이번에 얼마나 움직였는지 더한다. **추가로 로봇을 읽지 않는다.**
+
+    확인하려고 버스를 한 번 더 쓰면, 재는 일이 재려는 것을 방해한다.
+    그래서 직전 목표를 기준으로 **명령한 이동량**을 센다. 실제 도달량과는
+    조금 다를 수 있으나, 마모는 명령한 만큼 움직이려 한 것에 따라붙는다.
+    기준점이 없으면(첫 움직임) 세지 않는다 — 없는 값을 지어내지 않는다.
+    """
+    unit = CONFIG["descriptor"].get("unit") or {}
+    per = float(unit.get("per_degree") or 1) or 1.0
+    hand = _hand_joint_id()
+    moved: dict[str, float] = {}
+    for joint, value in targets.items():
+        name = str(joint)
+        before = _LAST_POSE.get(name)
+        if before is None:
+            continue
+        raw = abs(int(value) - int(before))
+        # 손은 자기 단위(틱)다. 도로 바꾸지 않고 그대로 센다.
+        moved[name] = float(raw) if name == hand else round(raw / per, 3)
+    _LAST_POSE.update({str(j): int(v) for j, v in targets.items()})
+    if not moved:
+        return
+    temps: dict[str, float] = {}
+    adapter = CONFIG.get("adapter")
+    reader = getattr(adapter, "read_temperatures", None)
+    if callable(reader):
+        try:
+            temps = {str(k): float(v) for k, v in (reader() or {}).items()}
+        except Exception:                          # noqa: BLE001 — 온도를 못 읽어도 이동량은 센다
+            temps = {}
+    try:
+        usage.record_move(moved, seconds=seconds, temperatures=temps, label=label)
+    except Exception:                              # noqa: BLE001
+        pass                                        # 기록 실패가 로봇을 멈추게 하지 않는다
+
 
 # 부품별 응답 확인. **폴링마다 실물을 두드리지 않는다** — 확인은 버스를
 # 쓰는 일이라 움직이는 중에 끼어들면 안 된다. 연결할 때와 복구할 때만
@@ -383,12 +478,15 @@ def _send(targets: dict[str, Any], velocity: int, label: str,
           *, min_gap: float | None = None) -> dict[str, Any]:
     """실제로 보낸다. 팔과 손을 각자의 길로 보낸다."""
     adapter = CONFIG["adapter"]
+    started = time.monotonic()
     arm, hand_target = _split_targets({j: _to_robot(str(j), v) for j, v in targets.items()})
     result: dict[str, Any] = {}
     _ensure_link()                     # 전원을 껐다 켰으면 새 연결로 이어붙인다
     _pace(min_gap)                     # 앞 명령과 너무 붙지 않게
     _read_cache["value"] = {}          # 움직였으니 방금 값은 버린다
     with SERIAL_LOCK:
+      # Recheck after acquiring the device lock: ESTOP may have arrived while waiting.
+      _check_all(targets, velocity)
       if arm:
         result["arm"] = adapter.move_joints(
             arm, velocity=velocity, acceleration=20, label=label,
@@ -397,6 +495,8 @@ def _send(targets: dict[str, Any], velocity: int, label: str,
       if hand_target is not None:
         result["hand"] = adapter.move_gripper(
             hand_target, velocity=velocity, acceleration=20, label=label)
+    # **나간 뒤에만 센다.** 막힌 명령은 움직인 것이 아니다.
+    _record_usage(targets, time.monotonic() - started, label)
     return result
 
 
@@ -409,6 +509,8 @@ def _stop_hardware() -> bool:
     stop = getattr(adapter, "stop", None)
     if callable(stop):                      # MyCobot은 자체 정지 명령이 있다
         stop()
+        if getattr(adapter, "stop_holds_position", False):
+            return True
     # 자체 정지 명령이 있어도 **그 자리에 세우는 일은 건너뛰지 않는다.**
     # 전에는 stop()만 부르고 돌아섰는데, 컨트롤러의 정지는 토크를 보장하지
     # 않는다 — 멈춤을 눌렀는데 팔이 처지는 일이 실제로 있었다.
@@ -474,6 +576,7 @@ def estop_status() -> dict:
     """콘솔이 살아있음을 확인하는 자리이기도 하다. 부작용 없는 읽기."""
     return {"ok": True, **state.to_dict(), "module": CONFIG["module"],
             "device": CONFIG["device"], "simulated": CONFIG["adapter"] is None or bool(getattr(CONFIG["adapter"], "simulated", False)),
+            "evidence_kind": getattr(CONFIG.get("adapter"), "evidence_kind", "physical" if CONFIG["adapter"] else "none"),
             # 시늉이면 **왜 시늉인지** 함께 준다. 조용한 시늉은 거짓말에 가깝다
             "simulate_reason": CONFIG.get("simulate_reason") or "",
             # 부품별 응답 — **언제 본 것인지와 함께** 준다. 시각 없는 증거는
@@ -484,6 +587,264 @@ def estop_status() -> dict:
             "parts_reason": _ATTEST.get("reason") or "",
             # 옛 노드와 같은 이름도 함께 준다 — 화면이 둘 다 읽는다
             "active": state.estop_latched}
+
+
+# 시운전 폭. 작게 한 번, 조금 크게 한 번 — 작은 쪽에서 이미 이상하면
+# 큰 쪽은 하지 않는다. 자동차 시동 걸고 계기판 보는 것과 같은 자리다.
+SELF_CHECK_STEPS = (10, 30)
+
+# **어떤 경우에도 이 이상 움직이지 않는다.** 시운전은 살펴보는 것이지
+# 운동시키는 것이 아니다. 전에 손이 완전히 닫혔다 완전히 열렸고(100%),
+# 팔은 범위의 절반(고정대면 180도)을 갔다 — 둘 다 시운전이 아니었다.
+SELF_CHECK_MAX_PERCENT = 30
+
+# 비율만으로는 모자란다. 고정대는 범위가 360도라 **30%도 108도**다.
+# 시운전에 팔이 반 바퀴 도는 것은 살펴보는 것이 아니다. 그래서 각도로도 막는다.
+# (이 값을 키우면 움직임이 커진다. 실물에서 보고 정한 숫자가 아니라
+#  보수적으로 잡은 것이므로, 실물 확인 뒤 조정한다.)
+SELF_CHECK_MAX_DEGREES = 20
+
+
+def _self_check_amount(span: int, pct: int, room_up: int, room_down: int,
+                       *, degrees: bool = True) -> int:
+    """이번 걸음의 폭. **상한을 한 자리에서만 정한다.**
+
+    호출부마다 각자 셈하면 언젠가 한 곳이 넘긴다. 실제로 그랬다 —
+    손은 100%로 열고 닫았고, 팔은 범위의 절반을 갔다(2026-09-21 실물).
+
+    막는 것이 둘이다.
+
+        비율   그 관절 범위의 50%까지
+        각도   20도까지 (손처럼 도(°)가 뜻이 없는 축은 비율만)
+    """
+    capped = min(int(pct), SELF_CHECK_MAX_PERCENT)
+    want = int(span * capped / 100)
+    if degrees:
+        unit = CONFIG["descriptor"].get("unit") or {}
+        per = float(unit.get("per_degree") or 0)
+        if per > 0:
+            # **각도 상한은 큰 걸음(50%)에 걸리는 값이다.** 모든 걸음을
+            # 같은 각도로 잘라 버리면 10%와 50%가 똑같아지고, "작게 한 번
+            # 조금 크게 한 번"이라는 각본 자체가 사라진다. 그래서 비율에
+            # 맞춰 나눈다 — 50%면 20도, 10%면 4도.
+            share = capped / SELF_CHECK_MAX_PERCENT
+            want = min(want, int(SELF_CHECK_MAX_DEGREES * share * per))
+    return max(0, min(want, max(int(room_up), int(room_down))))
+
+
+def _joint_labels() -> dict[str, str]:
+    """사람이 부르는 이름. **화면이 추측하지 않게 런타임이 알려준다.**
+
+    고정대 · 관절 1,2,3… · 손. 번호로만 주면 화면이 "몇 번째가 손이지"를
+    스스로 맞춰야 하고, 로봇이 바뀌면 틀린다.
+    """
+    labels: dict[str, str] = {}
+    for index, joint in enumerate(_arm_joint_ids()):
+        labels[str(joint)] = "고정대" if index == 0 else f"관절 {index}"
+    hand = _hand_joint_id()
+    if hand:
+        labels[str(hand)] = "손"
+    return labels
+
+
+def _self_check_joint(joint: str, pct: int, operator: str) -> dict[str, Any]:
+    """관절 하나를 그 폭만큼 움직여 보고 돌아온다. **같은 안전 문으로 나간다.**"""
+    band = (CONFIG.get("limits") or {}).get(str(joint))
+    present = _read_present(fresh=True)
+    start = int(present.get(str(joint), 0))
+    if not band:
+        return {"joint": joint, "percent": pct, "ran": False,
+                "reason": "이 관절의 안전 범위가 없어 움직여 보지 않았습니다"}
+
+    low, high = int(band[0]), int(band[1])
+    span = high - low
+    # 남는 쪽으로 간다. 양쪽 다 모자라면 갈 수 있는 만큼만 간다.
+    room_up, room_down = high - start, start - low
+    amount = _self_check_amount(span, pct, room_up, room_down)
+    if amount <= 0:
+        return {"joint": joint, "percent": pct, "ran": False,
+                "reason": "지금 자리에서 움직일 여유가 없습니다"}
+    target = start + amount if room_up >= room_down else start - amount
+
+    began = time.monotonic()
+    answer = _run({str(joint): _to_display(str(joint), target)},
+                  safety.DEFAULT_VELOCITY, f"self_check_{pct}", "SELF_CHECK")
+    seconds = round(time.monotonic() - began, 2)
+    if not answer.get("success"):
+        return {"joint": joint, "percent": pct, "ran": True, "ok": False,
+                "seconds": seconds, "moved_raw": amount,
+                "verdict": answer.get("verdict", ""),
+                "reason": "; ".join(answer.get("blocked_reasons") or [])
+                          or answer.get("error", "") or "목표에 도달하지 못했습니다"}
+
+    # 돌아온다. 점검이 로봇을 다른 자리에 두고 끝나면 안 된다.
+    back = _run({str(joint): _to_display(str(joint), start)},
+                safety.DEFAULT_VELOCITY, f"self_check_{pct}_return", "SELF_CHECK")
+    worst = max((answer.get("errors_deg") or {}).values(), default=0.0)
+    return {"joint": joint, "percent": pct, "ran": True, "ok": True,
+            "seconds": seconds, "moved_raw": amount,
+            "error_deg": round(float(worst), 2),
+            "returned": bool(back.get("success")),
+            "operator": operator}
+
+
+@app.post("/api/self-check")
+def self_check(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    """상태점검(시운전) — **실제로 조금 움직여 본다.**
+
+    지금까지의 확인은 읽기만 해서 위험이 없었다. 이건 다르다. 그래서
+
+        · 정지·단선 래치가 걸려 있으면 **시운전도 막힌다**
+        · 범위·속도 검사를 **기존 실행과 같은 문**으로 지난다(`_run`)
+        · 사람이 옆에 있다고 밝히지 않으면 시작하지 않는다
+        · 주변이 비었는지 먼저 확인받는다
+
+    점검 단추가 안전 게이트를 우회하는 뒷문이 되면 안 된다.
+    """
+    operator = str(payload.get("operator") or "").strip()
+    if not operator or not payload.get("confirmed"):
+        return {"success": False, "verdict": "BLOCKED_NO_OPERATOR",
+                "blocked_reasons": ["누가 지켜보는지 밝히고 확인해야 시작합니다"],
+                "actual_hardware_called": False}
+    if not payload.get("workspace_clear"):
+        return {"success": False, "verdict": "BLOCKED_WORKSPACE_UNCONFIRMED",
+                "blocked_reasons": ["로봇이 움직입니다. 주변이 비었는지 확인해 주세요"],
+                "actual_hardware_called": False}
+    if CONFIG.get("adapter") is None:
+        return _no_hardware()
+
+    try:
+        with _exclusive("상태점검"):
+            return _self_check_body(operator)
+    except _Busy as busy:
+        return _busy_answer(busy.name)
+
+
+def _self_check_body(operator: str) -> dict:
+    # **이상이 있으면 아예 움직이지 않는다.** 먼저 물어보고, 응답하지 않는
+    # 곳은 시험해 보지 않는다 — 고장 난 관절을 억지로 밀어 보는 것은
+    # 점검이 아니라 고장을 키우는 일이다.
+    checked = _refresh_attestation()
+    parts = checked.get("parts") or {}
+    silent: set[str] = set()
+    for info in parts.values():
+        if info.get("responding") is False:
+            for name, ok in (info.get("detail") or {}).items():
+                if not ok:
+                    silent.add(str(name))
+
+    steps: list[dict[str, Any]] = []
+    joints: dict[str, Any] = {}
+    stopped = ""
+    for joint in _arm_joint_ids():
+        if str(joint) in silent:
+            joints[str(joint)] = {"state": "이상", "moved": False,
+                                  "reason": "응답하지 않아 움직여 보지 않았습니다"}
+            continue
+        rows = []
+        for pct in SELF_CHECK_STEPS:
+            if state.estop_latched or state.disconnect_latched:
+                stopped = "점검 도중 정지가 걸렸습니다"
+                break
+            row = _self_check_joint(joint, pct, operator)
+            rows.append(row)
+            steps.append(row)
+            # **작은 쪽에서 이미 이상하면 큰 쪽은 하지 않는다.**
+            if row.get("ran") and not row.get("ok"):
+                break
+        joints[joint] = _verdict_for(rows)
+        if stopped:
+            break
+
+    hand = _hand_joint_id()
+    if hand and not stopped:
+        if str(hand) in silent:
+            joints[str(hand)] = {"state": "이상", "moved": False,
+                                 "reason": "응답하지 않아 움직여 보지 않았습니다"}
+        else:
+            joints[hand] = _self_check_hand(operator, steps)
+
+    bad = [name for name, row in joints.items() if row.get("state") == "이상"]
+    unknown = [name for name, row in joints.items() if row.get("state") == "확인 불가"]
+    verdict = "이상 있음" if bad else ("확인 불가 있음" if unknown else "정상")
+    try:
+        usage.note_self_check(verdict)
+    except Exception:                              # noqa: BLE001
+        pass
+    return {"success": not bad, "verdict": verdict, "actual_hardware_called": True,
+            "joints": joints, "labels": _joint_labels(), "steps": steps,
+            "stopped": stopped, "operator": operator, "usage": usage.summary()}
+
+
+def _verdict_for(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """관절 하나에 대한 사람 말 판정. **모르는 것은 모른다고 적는다.**"""
+    ran = [r for r in rows if r.get("ran")]
+    if not ran:
+        return {"state": "확인 불가",
+                "reason": (rows[0].get("reason") if rows else "") or "움직여 보지 못했습니다"}
+    failed = [r for r in ran if not r.get("ok")]
+    if failed:
+        return {"state": "이상", "reason": failed[0].get("reason", ""),
+                "percent": failed[0].get("percent")}
+    worst = max((float(r.get("error_deg") or 0.0) for r in ran), default=0.0)
+    slowest = max((float(r.get("seconds") or 0.0) for r in ran), default=0.0)
+    return {"state": "정상", "error_deg": round(worst, 2), "seconds": round(slowest, 2)}
+
+
+def _self_check_hand(operator: str, steps: list[dict[str, Any]]) -> dict[str, Any]:
+    """손은 닫았다 연다. **집게가 붙어 있는지의 단서가 여기서 나온다.**
+
+    집게가 붙어 있으면 맞물리면서 버티고, 없으면 끝까지 헛돈다. 다만
+    걸림·마모도 비슷하게 보이므로 **단정하지 않는다** — 관측을 적고,
+    무엇을 뜻하는지는 실물로 확인한 뒤에 말한다.
+    """
+    hand = _hand_joint_id()
+    band = (CONFIG.get("limits") or {}).get(hand)
+    if not band:
+        return {"state": "확인 불가", "reason": "손의 안전 범위가 없습니다"}
+    low, high = int(band[0]), int(band[1])
+    span = high - low
+    present = _read_present(fresh=True)
+    start = int(present.get(hand, (low + high) // 2))
+    rows = []
+    # **손도 50%를 넘지 않는다.** 전에는 완전히 닫았다 완전히 열었다(100%).
+    # 집게가 붙어 있는지 보려고 끝까지 밀어붙일 이유가 없다 — 조금 오므려
+    # 보는 것으로 충분하고, 끝까지 가면 물린 것을 부순다.
+    plan: list[tuple[str, int]] = []
+    for pct in SELF_CHECK_STEPS:
+        amount = _self_check_amount(span, pct, high - start, start - low,
+                                    degrees=False)
+        if amount <= 0:
+            continue
+        toward_close = (start - low) >= (high - start)
+        plan.append((f"{pct}% 오므리기" if toward_close else f"{pct}% 벌리기",
+                     start - amount if toward_close else start + amount))
+    plan.append(("제자리", start))          # 점검이 손을 다른 자리에 두고 끝나지 않게
+    for name, target in plan:
+        began = time.monotonic()
+        answer = _run({hand: _to_display(hand, target)}, safety.DEFAULT_VELOCITY,
+                      f"self_check_hand_{name}", "SELF_CHECK")
+        row = {"joint": hand, "percent": SELF_CHECK_MAX_PERCENT, "ran": True,
+               "ok": bool(answer.get("success")), "label": name,
+               "seconds": round(time.monotonic() - began, 2),
+               "reason": "" if answer.get("success")
+                         else ("; ".join(answer.get("blocked_reasons") or [])
+                               or answer.get("error", ""))}
+        rows.append(row)
+        steps.append(row)
+        if not row["ok"]:
+            break
+    verdict = _verdict_for(rows)
+    verdict["note"] = ("집게가 실제로 붙어 있는지는 이 점검만으로 단정하지 않습니다 — "
+                       "걸림·마모도 비슷하게 보입니다")
+    return verdict
+
+
+@app.get("/api/usage")
+def get_usage() -> dict:
+    """주행거리계. **기록이 없으면 없다고 말한다** — 0으로 꾸미지 않는다."""
+    return {"ok": True, "module": CONFIG.get("module") or "",
+            "labels": _joint_labels(), **usage.summary()}
 
 
 @app.post("/api/attest-parts")
@@ -532,6 +893,10 @@ def estop_reset(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
 
 @app.post("/api/pause-hold")
 def pause_hold(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    if not payload.get("paused", True) and not state.estop_latched and not state.disconnect_latched:
+        adapter = CONFIG.get("adapter")
+        if adapter is not None and getattr(adapter, "stop_holds_position", False):
+            adapter.recover_from_fault()
     state.paused = bool(payload.get("paused", True))
     state.note("일시정지" if state.paused else "일시정지 해제")
     if state.paused:
@@ -751,6 +1116,12 @@ def _run(targets: dict[str, Any], velocity: int, label: str, verdict: str,
     sent: dict[str, Any] = {}
     try:
         sent = _send(targets, velocity, label, min_gap=min_gap)
+    except safety.SafetyBlocked as exc:
+        # `_send`는 장치 잠금을 잡은 뒤 안전 판정을 **다시** 한다(기다리는 동안
+        # 정지가 올 수 있다). 그때 올라오는 것을 여기서 안 받으면 아래
+        # `except Exception`으로 떨어져 "로봇이 거절함"이 되고, 자동 되살리기까지
+        # 돈다 — 막힌 것이지 로봇이 거절한 것이 아니다.
+        return _blocked(exc)
     except InFlightSafetyViolationError as exc:
         state.latch_estop(str(exc))
         return {"success": False, "verdict": "BLOCKED_IN_FLIGHT_SAFETY",
@@ -797,6 +1168,11 @@ def _run(targets: dict[str, Any], velocity: int, label: str, verdict: str,
             present = {}
 
     arm_result = sent.get("arm") or {}
+    if arm_result.get("canceled") or arm_result.get("timed_out") or arm_result.get("result_ok") is False:
+        return {"success": False,
+                "verdict": "CANCELED" if arm_result.get("canceled") else "TRAJECTORY_FAILED",
+                **evidence,
+                "error": arm_result.get("error", ""), "trajectory": arm_result, "present": present}
     if (isinstance(arm_result, dict) and arm_result.get("settled") is False
             and not _retried and _auto_recover_allowed()):
         # 부품이 "사람 없이 복구해도 된다"고 밝힌 경우에만 스스로 한 번 되살린다.
@@ -856,6 +1232,10 @@ def _check_all(targets: dict[str, Any], velocity: int | None) -> int:
 
 @app.post("/api/move-to")
 def move_to(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    # 다른 일이 도는 중이면 받지 않는다. 번갈아 나가면 팔이 두 목표
+    # 사이를 오간다(2026-09-24 전수조사).
+    if _JOB["name"]:
+        return _busy_answer(_JOB["name"])
     joint = str(payload.get("joint_id") or "")
     target = int(payload.get("target_ticks") or payload.get("target") or 0)
     if not joint:
@@ -874,6 +1254,10 @@ def move_to(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
 @app.post("/api/jog")
 def jog(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     """미세 이동 — 지금 위치에서 얼마만큼. 목표는 런타임이 계산한다."""
+    # 다른 일이 도는 중이면 받지 않는다. 번갈아 나가면 팔이 두 목표
+    # 사이를 오간다(2026-09-24 전수조사).
+    if _JOB["name"]:
+        return _busy_answer(_JOB["name"])
     joint = str(payload.get("joint_id") or "")
     delta = int(payload.get("delta_ticks") or payload.get("delta") or 0)
     if not joint:
@@ -917,6 +1301,10 @@ def jog(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
 @app.post("/api/execute-actual")
 def execute_actual(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     """자세 하나를 실행한다. 목표값은 콘솔이 준다 — 런타임은 판정하고 보낸다."""
+    # 다른 일이 도는 중이면 받지 않는다. 번갈아 나가면 팔이 두 목표
+    # 사이를 오간다(2026-09-24 전수조사).
+    if _JOB["name"]:
+        return _busy_answer(_JOB["name"])
     targets = payload.get("targets") or {}
     if not targets:
         return {"success": False, "verdict": "NO_TARGETS",
@@ -1067,7 +1455,8 @@ def _save_limits_file() -> None:
 
 def build(module_id: str, device: str, limits_path: str = "", *,
           modules_dir: str = "", simulate: bool = False,
-          eye: str = "", eye_device: str = "", state_path: str = "") -> None:
+          eye: str = "", eye_device: str = "", state_path: str = "",
+          usage_path: str = "") -> None:
     """런타임을 이 부품에 맞게 세운다. 실물이 없으면 시늉 모드로 뜬다."""
     _read_cache.update({"at": 0.0, "value": {}})   # 다른 로봇의 값을 물려받지 않는다
     _TRACKING["session"] = None
@@ -1083,6 +1472,10 @@ def build(module_id: str, device: str, limits_path: str = "", *,
     # 걸어 둔 채 런타임이 죽었다 살아날 때 래치가 풀린 채로 태어난다 —
     # 사람이 풀지 않았는데 풀리는 길이다(safety.py 머리말).
     CONFIG["state_path"] = state_path or str(root / "data" / f"safety_state_{module_id}.json")
+    # 주행거리계도 로봇마다 따로다. 다른 로봇의 이력을 물려받으면 안 된다.
+    CONFIG["usage_path"] = usage_path or str(root / "data" / f"usage_{module_id}.json")
+    globals()["usage"] = UsageLog(CONFIG["usage_path"])
+    _LAST_POSE.clear()
     inherited = state.bind_storage(CONFIG["state_path"])
     blocking = state.blocking_summary()
     if blocking:
@@ -1161,6 +1554,7 @@ def main() -> int:
     parser.add_argument("--device", default="", help="장치 이름 (예: /dev/ttyUSB0, COM3)")
     parser.add_argument("--port", type=int, default=8501)
     parser.add_argument("--limits", default="", help="안전 범위 JSON 파일")
+    parser.add_argument("--state-path", default="", help="Safety state file for this runtime instance")
     parser.add_argument("--modules", default="", help="부품 기술서 폴더")
     parser.add_argument("--simulate", action="store_true", help="실물 없이 띄운다")
     parser.add_argument("--eye", default="",
@@ -1171,7 +1565,7 @@ def main() -> int:
 
     build(args.module, args.device, args.limits,
           modules_dir=args.modules, simulate=args.simulate,
-          eye=args.eye, eye_device=args.eye_device)
+          eye=args.eye, eye_device=args.eye_device, state_path=args.state_path)
 
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=args.port)

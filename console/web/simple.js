@@ -50,6 +50,39 @@ var I18N = {
     settingsRobot: '로봇 선택',
     settingsDevice: '연결 포트',
     serverRestartHelp: '서버 재시작',
+    selfCheck: '🔧 상태점검',
+    selfCheckHome: '로봇을 기본 자세에 두고 시작한다',
+    restampTitle: '🗂 옛 자세 이어받기',
+    restampTip: '지문 계산식이 바뀌기 전에 저장된 자세를 확인하고 이어받습니다. 부품이 진짜 바뀐 자세는 건드리지 않습니다.',
+    restampSubtitle: '지문 계산식에 단위·교정이 들어가면서, 부품이 바뀌지 않았는데도 그전에 저장한 자세가 막힐 수 있습니다. 값은 그대로 있습니다. 확인하면 한 번에 이어받습니다. 부품이 진짜 바뀐 자세는 건드리지 않습니다.',
+    restampCounting: '세어 보는 중…',
+    restampNothing: '이어받을 자세가 없습니다.',
+    restampMovable: '이어받을 수 있는 자세',
+    restampSkipped: '부품이 달라져 건드리지 않을 자세',
+    restampRunning: '이어받는 중…',
+    restampDone: '이어받았습니다:',
+    restampFailed: '이어받지 못했습니다.',
+    checkPick: '점검할 로봇 고르기',
+    checkPickFirst: '점검할 로봇을 하나 이상 고르세요.',
+    checkLoading: '로봇 목록을 불러오는 중…',
+    checkNoRobot: '등록된 로봇이 없습니다.',
+    checkAllOk: '모두 정상',
+    checkHasProblem: '대에 문제가 있습니다',
+    selfCheckTip: '쓰기 전에 로봇을 조금씩 움직여 보고 부품마다 이상 여부를 알려 줍니다.',
+    selfCheckTitle: '🔧 상태점검',
+    selfCheckSubtitle: '쓰기 전에 관절을 조금씩 움직여 보고 부품마다 알려 줍니다. 응답하지 않는 곳은 움직여 보지 않습니다.',
+    selfCheckStart: '점검 시작',
+    selfCheckRunning: '점검하는 중…',
+    selfCheckWait: '움직이고 있습니다. 기다려 주세요.',
+    selfCheckDone: '점검 끝 — ',
+    selfCheckFailed: '점검하지 못했습니다.',
+    selfCheckClose: '닫기',
+    usageTitle: '사용 기록',
+    usageNone: '사용 기록: 아직 없습니다.',
+    usageTime: '총 움직인 시간',
+    usageCount: '움직인 횟수',
+    usageBusiest: '제일 많이 쓴 곳',
+    usageLastCheck: '마지막 점검',
     warn: '안전 주의: 이 화면은 실제 로봇과 연결됩니다. 반드시 운영자 입회 하에 사용하세요.',
     warnActive: '[실행 중] 실제 로봇이 움직입니다 — 비상정지 준비',
     step1: '동작 순서',
@@ -244,6 +277,39 @@ var I18N = {
     settingsRobot: 'Robot',
     settingsDevice: 'Serial port',
     serverRestartHelp: 'Restart Server',
+    selfCheck: '🔧 Status check',
+    selfCheckHome: 'Put the robot in its home pose before starting',
+    restampTitle: '🗂 Carry over old poses',
+    restampTip: 'Checks poses saved before the fingerprint formula changed and carries them over. Poses whose parts really changed are left alone.',
+    restampSubtitle: 'When units and calibration entered the fingerprint, poses saved before that can be blocked even though no part changed. Their values are intact. Confirm and they are carried over at once. Poses whose parts really changed are left alone.',
+    restampCounting: 'Counting…',
+    restampNothing: 'Nothing to carry over.',
+    restampMovable: 'Poses that can be carried over',
+    restampSkipped: 'Left alone (parts really changed)',
+    restampRunning: 'Carrying over…',
+    restampDone: 'Carried over:',
+    restampFailed: 'Could not carry them over.',
+    checkPick: 'Pick robots to check',
+    checkPickFirst: 'Pick at least one robot to check.',
+    checkLoading: 'Loading robots…',
+    checkNoRobot: 'No robots registered.',
+    checkAllOk: 'all OK',
+    checkHasProblem: 'with problems',
+    selfCheckTip: 'Moves each joint a little before you use the robot and tells you how each part is doing.',
+    selfCheckTitle: '🔧 Status check',
+    selfCheckSubtitle: 'Moves each joint a little and reports on every part. Parts that do not answer are not moved.',
+    selfCheckStart: 'Start check',
+    selfCheckRunning: 'Checking…',
+    selfCheckWait: 'The robot is moving. Please wait.',
+    selfCheckDone: 'Done — ',
+    selfCheckFailed: 'Could not run the check.',
+    selfCheckClose: 'Close',
+    usageTitle: 'Usage',
+    usageNone: 'Usage: nothing recorded yet.',
+    usageTime: 'Time moving',
+    usageCount: 'Moves',
+    usageBusiest: 'Busiest joint',
+    usageLastCheck: 'Last check',
     warn: 'Safety notice: This interface is connected to the real robot. Use only with an operator present.',
     warnActive: '[EXECUTING] Robot is moving — keep E-Stop ready',
     step1: 'Action Order',
@@ -970,6 +1036,16 @@ function applyI18n() {
   setText('lbl-settings-device', d.settingsDevice);
   setText('btn-lang', d.langBtn);
   setText('btn-server-restart-help', d.serverRestartHelp);
+  setText('m-item-home-text', d.selfCheckHome);
+  setText('btn-restamp', d.restampTitle);
+  setTitle('btn-restamp', d.restampTip);
+  setText('restamp-title', d.restampTitle);
+  setText('restamp-subtitle', d.restampSubtitle);
+  setText('btn-restamp-close', d.selfCheckClose);
+  setTitle('btn-self-check', d.selfCheckTip);
+  setText('check-modal-title', d.selfCheckTitle);
+  setText('check-modal-subtitle', d.selfCheckSubtitle);
+  setText('btn-check-close', d.selfCheckClose);
   setText('btn-expert', d.expertMode);
   setText('lbl-step1', d.step1);
   setText('lbl-step2', d.step2);
@@ -2283,6 +2359,7 @@ function showModal(action) {
 }
 function hideModal() {
   document.getElementById('s-modal').style.display = 'none';
+  hideHomePoseNotice();
 }
 function resetQueueVisuals() {
   for (var i = 0; i < state.queue.length; i++) {
@@ -2293,6 +2370,226 @@ function resetQueueVisuals() {
     }
     if (s) s.textContent = '';
   }
+}
+
+// ─── 옛 자세 이어받기 ──────────────────────────────────────────
+// 지문에 단위·교정이 들어가면서 부품이 안 바뀌었는데도 옛 자세가 막혔다.
+// 값은 그대로 있으므로 **도장만 옮긴다.** 다만 부품이 진짜 달라진 것을 섞어
+// 옮기면 엉뚱한 관절값이 되살아나므로, **증명되는 것만** 손댄다.
+//
+// 자주 쓸 것이 아니라 한 번 지나가는 정비다. 그래서 로봇 목록이 아니라
+// 환경설정에 둔다 — 로봇을 골라서 하는 일이 아니다.
+function openRestampModal() {
+  var menu = document.querySelector('.s-settings-menu');
+  if (menu) menu.classList.remove('open');
+  document.getElementById('s-restamp-modal').style.display = 'flex';
+  document.getElementById('restamp-msg').textContent = '';
+  document.getElementById('btn-restamp-run').style.display = '';
+  countRestampable();
+}
+
+function closeRestampModal() {
+  document.getElementById('s-restamp-modal').style.display = 'none';
+}
+
+// 누르기 전에 **몇 개가 대상인지** 보여준다. 모르고 누르게 하지 않는다.
+function countRestampable() {
+  var box = document.getElementById('restamp-count');
+  box.textContent = t().restampCounting;
+  fetch(BACKEND + '/api/restamp-poses/preview', { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d.movable) {
+        box.textContent = t().restampNothing;
+        document.getElementById('btn-restamp-run').style.display = 'none';
+        return;
+      }
+      box.innerHTML = '<div>' + escapeHtml(t().restampMovable) + ': <b>' +
+        d.movable + '</b></div>' +
+        (d.skipped ? '<div style="color:#94a3b8;">' + escapeHtml(t().restampSkipped) +
+                     ': ' + d.skipped + '</div>' : '');
+    })
+    .catch(function () { box.textContent = t().restampNothing; });
+}
+
+function runRestamp() {
+  var btn = document.getElementById('btn-restamp-run');
+  btn.disabled = true;
+  document.getElementById('restamp-msg').textContent = t().restampRunning;
+  fetch(BACKEND + '/api/restamp-poses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operator: '운영자', confirmed: true })
+  }).then(function (r) { return r.json(); })
+    .then(function (d) {
+      document.getElementById('restamp-msg').textContent = d.ok
+        ? (t().restampDone + ' ' + (d.moved || 0))
+        : (d.error || t().restampFailed);
+      slog(t().restampTitle + ': ' + (d.moved || 0), d.ok ? 's-log-ok' : 's-log-err');
+      return countRestampable();
+    })
+    .catch(function (err) {
+      document.getElementById('restamp-msg').textContent = t().restampFailed + ' ' + err;
+    })
+    .then(function () { btn.disabled = false; });
+}
+
+// ─── 상태점검(시운전) — 환경설정 안에 둔다 ──────────────────────
+// CMOS가 켤 때 부품을 훑어보는 자리와 같다. 별도 화면이 아니라 환경설정이다.
+// **쓰기 전에** 조금 움직여 보고 부품마다 알려 준다 — 실행해 보고 실패해서
+// 아는 것(사후)과, 누르기 전에 아는 것(사전)은 다르다.
+// 순서는 하나다. **창을 겹치지 않는다.**
+//
+//     환경설정 → 상태점검  →  안전 주의(기존 것)  →  실행  →  결과 팝업  →  닫기
+//
+// 전에는 점검 창을 먼저 띄우고 그 위에 안전 창을 띄웠다. 뒤에 가려 보이지
+// 않아서 사람은 "화면이 어두워졌는데 아무것도 없다"고 느꼈고, 닫기를 누르자
+// 그제야 안전 문구가 나왔다. 그리고 결과는 이미 닫힌 창에 그려서 보이지도
+// 않았다 — 다시 열어야 볼 수 있었다. 한 번에 하나씩만 띄운다.
+// 상태점검은 **로봇 목록에서 시작한다.** 거기에 이미 체크박스가 있고,
+// 실행 시작·예약 취소·초기화가 같은 줄에 있다. 환경설정에 따로 두면 고르는
+// 자리와 누르는 자리가 갈라져, 로봇이 수십 대가 되면 사람이 헤맨다.
+//
+// 목록의 [🔧 상태점검]이 체크된 로봇 id를 들고 이 함수를 부른다.
+function startSelfCheckFor(ids) {
+  if (!ids || !ids.length) return;
+  // 점검은 **기본 자세에서 시작해야** 잰 값을 지난번과 견줄 수 있다. 다만
+  // 안전한 자세는 로봇마다 달라 코드가 정할 수 없고, 운영자는 이미 자기
+  // 동작 순서를 갖고 있다. 그래서 강제하지 않고 **알리기만** 한다.
+  var line = document.getElementById('m-item-home');
+  if (line) line.style.display = '';
+  // 로봇이 움직인다. **기존 실행과 같은 안전 확인을 쓴다** — 점검이라고
+  // 따로 만든 확인을 두면 사람이 두 가지를 외워야 하고, 하나는 느슨해진다.
+  // 확인 단추가 hideModal() 뒤에 이 함수를 부른다.
+  showModal(function () { runSelfCheck(ids); });
+}
+
+function closeSelfCheckModal() {
+  document.getElementById('s-check-modal').style.display = 'none';
+}
+
+// 이 줄은 상태점검에서만 쓴다. 다른 실행의 확인 창에 남아 있으면 안 된다.
+function hideHomePoseNotice() {
+  var line = document.getElementById('m-item-home');
+  if (line) line.style.display = 'none';
+}
+
+function runSelfCheck(ids) {
+  // 결과 창을 **먼저** 띄운다. 움직이는 동안 아무것도 안 보이면 사람은
+  // 멈춘 줄 안다. 여기에 진행 상황을 적고, 끝나면 같은 자리에 결과가 찬다.
+  document.getElementById('s-check-modal').style.display = 'flex';
+  document.getElementById('check-result').innerHTML = '';
+  document.getElementById('check-usage').innerHTML = '';
+
+  // **한 대씩 차례로 돈다.** 여러 대가 동시에 움직이면 사람이 어느 쪽을
+  // 봐야 할지 모르고, 하나를 멈추려다 다른 하나를 놓친다.
+  var results = [];
+  var chain = Promise.resolve();
+  ids.forEach(function (robotId, index) {
+    chain = chain.then(function () {
+      document.getElementById('check-msg').textContent =
+        t().selfCheckWait + ' (' + (index + 1) + '/' + ids.length + ')';
+      return fetch(BACKEND + '/api/self-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ robot_id: robotId, operator: '운영자',
+                               confirmed: true, workspace_clear: true })
+      }).then(function (r) { return r.json(); })
+        .then(function (d) {
+          results.push({ robotId: robotId, data: d });
+          renderSelfCheck(results);
+          slog(t().selfCheckTitle + ' [' + robotId + ']: ' +
+               (d.verdict || d.stopped || ''),
+               d.verdict === '정상' ? 's-log-ok' : 's-log-err');
+        })
+        .catch(function (err) {
+          results.push({ robotId: robotId, data: { stopped: String(err) } });
+          renderSelfCheck(results);
+        });
+    });
+  });
+  chain.then(function () {
+    var bad = results.filter(function (r) { return r.data.verdict !== '정상'; });
+    document.getElementById('check-msg').textContent = bad.length
+      ? (t().selfCheckDone + bad.length + '/' + results.length + ' ' + t().checkHasProblem)
+      : (t().selfCheckDone + t().checkAllOk);
+    return loadSelfCheckUsage(ids);
+  });
+}
+
+function renderSelfCheck(results) {
+  // 로봇마다 한 덩이. **어느 로봇 이야기인지 먼저 적는다** — 기종이 섞이면
+  // 관절 이름만 보고는 어느 팔인지 알 수 없다.
+  var color = { '정상': '#34d399', '이상': '#f87171', '확인 불가': '#94a3b8' };
+  document.getElementById('check-result').innerHTML = results.map(function (item) {
+    var d = item.data || {};
+    var joints = d.joints || {};
+    var ids = Object.keys(joints);
+    var head = '<div style="font-weight:700;color:#cbd5e1;margin:14px 0 6px;">' +
+      escapeHtml(item.robotId) +
+      (d.verdict ? ' <span style="color:' + (color[d.verdict] || '#94a3b8') +
+                   '">· ' + escapeHtml(d.verdict) + '</span>' : '') + '</div>';
+    if (!ids.length) {
+      return head + '<div style="color:#94a3b8;padding:4px 0;">' +
+        escapeHtml(d.stopped || t().selfCheckFailed) + '</div>';
+    }
+    return head + ids.map(function (id) {
+      var row = joints[id] || {};
+      // 관절 이름은 **런타임이 알려준다.** 화면이 몇 번째가 손인지 맞추지 않는다.
+      var name = (d.labels && d.labels[id]) || id;
+      var why = row.reason || row.note || '';
+      if (!why && row.error_deg !== undefined) why = '오차 ' + row.error_deg + '도';
+      return '<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid #334155;">' +
+        '<span style="width:5em;flex:none;">' + escapeHtml(name) + '</span>' +
+        '<span style="width:4.5em;flex:none;font-weight:700;color:' +
+          (color[row.state] || '#94a3b8') + '">' + escapeHtml(row.state || '') + '</span>' +
+        '<span style="color:#94a3b8;">' + escapeHtml(why) + '</span></div>';
+    }).join('');
+  }).join('');
+}
+
+function loadSelfCheckUsage(ids) {
+  var box = document.getElementById('check-usage');
+  box.innerHTML = '';
+  // 주행거리계도 로봇마다 따로다. 남의 이력을 섞으면 정비 주기가 틀어진다.
+  var chain = Promise.resolve();
+  (ids || []).forEach(function (robotId) {
+    chain = chain.then(function () {
+      return fetch(BACKEND + '/api/usage?robot_id=' + encodeURIComponent(robotId),
+                   { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          // **기록이 없으면 없다고 말한다.** 0으로 꾸미면 새 로봇과 안 쓴
+          // 로봇이 같아 보인다.
+          if (!d.has_history) {
+            box.innerHTML += '<div style="padding:6px 0;">' + escapeHtml(robotId) +
+              ' — ' + escapeHtml(t().usageNone) + '</div>';
+            return;
+          }
+          var rows = [[t().usageTime, Math.round((d.moving_seconds || 0) / 60) +
+                       (lang === 'ko' ? '분' : ' min')],
+                      [t().usageCount, (d.move_count || 0) + (lang === 'ko' ? '번' : '')],
+                      [t().usageBusiest, (d.labels && d.labels[d.busiest_joint]) ||
+                                         d.busiest_joint || '—']];
+          if (d.last_self_check_at) {
+            rows.push([t().usageLastCheck, d.last_self_check_at.replace('T', ' ') +
+                       ' · ' + (d.last_self_check_verdict || '')]);
+          }
+          box.innerHTML += '<div style="font-weight:700;color:#cbd5e1;margin:12px 0 6px;">' +
+            escapeHtml(t().usageTitle) + ' — ' + escapeHtml(robotId) + '</div>' +
+            rows.map(function (r) {
+              return '<div style="display:flex;gap:10px;padding:4px 0;">' +
+                '<span style="width:9em;flex:none;">' + escapeHtml(r[0]) + '</span>' +
+                '<span>' + escapeHtml(String(r[1])) + '</span></div>';
+            }).join('');
+        })
+        .catch(function () {
+          box.innerHTML += '<div style="padding:6px 0;">' + escapeHtml(robotId) +
+            ' — ' + escapeHtml(t().usageNone) + '</div>';
+        });
+    });
+  });
+  return chain;
 }
 
 // ─── 범용 스타일 팝업 (2026-07-23: dexter_grid/hangeul 공용으로 승격) ─────

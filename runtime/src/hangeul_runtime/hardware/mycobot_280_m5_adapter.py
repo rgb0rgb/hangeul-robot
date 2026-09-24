@@ -343,8 +343,16 @@ class MyCobot280M5Adapter(RobotArmAdapter):
         temperature_limits_c: dict[str, float] | None = None,
         velocity_per_joint: dict[str, int] | None = None,
     ) -> dict[str, Any]:
-        del acceleration, label, bypass_temperature_check
-        self._check_temperature_limits(temperature_limits_c)
+        del acceleration, label
+        # **정지는 과열 검사에 막히지 않는다.**
+        # bypass는 두 곳에서만 온다 — 긴급 정지 뒤 그 자리에 세우기와, 복구 뒤
+        # 세우기다. 둘 다 새 동작이 아니라 **지금 자리를 그대로 다시 쓰는 일**이다.
+        # 전에는 이 인자를 버리고 무조건 검사했다. 그래서 관절이 뜨거울 때
+        # 정지를 누르면 세우는 호출이 예외로 떨어졌다 — 정확히 그때 필요한
+        # 일이 그때 안 됐다(2026-09-24 전수조사에서 발견. xArm은 지키고
+        # 있었고 MyCobot만 버리고 있었다).
+        if not bypass_temperature_check:
+            self._check_temperature_limits(temperature_limits_c)
         current = self.read_joint_positions()
         excluded_requested = self.excluded_joints & set(targets)
         if excluded_requested:

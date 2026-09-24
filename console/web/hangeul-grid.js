@@ -42,6 +42,9 @@
       cancelBtn: '⏹ 예약 취소',
       cancelTitle: '예약/진행 중인 다중 실행을 모두 취소합니다',
       resetBtn: '🔄 초기화',
+      checkBtn: '🔧 상태점검',
+      checkTitle: '체크한 로봇들을 한 대씩 조금 움직여 보고 부품마다 이상 여부를 알려 줍니다 (안전 확인 후)',
+      checkNone: '점검할 로봇을 먼저 체크하세요.',
       resetTitle: '완료/실패/취소된 다중 실행 표시와 체크박스/예약 시각을 처음 상태로 되돌리고, 모든 로봇의 상태 표시를 대기로 되돌립니다',
       colName: '로봇', colStatus: '상태', colTime: '시간', colAttach: '로봇 선택', colClear: '로봇 순서', colDelete: '삭제',
       checkAllTitle: '전체 선택/해제',
@@ -87,6 +90,9 @@
       cancelBtn: '⏹ Cancel Schedule',
       cancelTitle: 'Cancel all scheduled/in-progress multi-runs',
       resetBtn: '🔄 Reset',
+      checkBtn: '🔧 Status check',
+      checkTitle: 'Moves each checked robot a little, one at a time, and reports on every part (after safety confirmation)',
+      checkNone: 'Check at least one robot first.',
       resetTitle: "Reset finished multi-run markers, checkboxes, scheduled times, and every robot's status back to idle",
       colName: 'Robot', colStatus: 'Status', colTime: 'Time', colAttach: 'Robot Type', colClear: 'Run Order', colDelete: 'Delete',
       checkAllTitle: 'Select/deselect all',
@@ -140,6 +146,8 @@
     setTitle('hangeul-multi-cancel', d.cancelTitle);
     setText('hangeul-multi-reset', d.resetBtn);
     setTitle('hangeul-multi-reset', d.resetTitle);
+    setText('hangeul-multi-check', d.checkBtn);
+    setTitle('hangeul-multi-check', d.checkTitle);
     setText('hangeul-col-label-name', d.colName);
     setText('hangeul-col-label-status', d.colStatus);
     setText('hangeul-col-label-time', d.colTime);
@@ -467,12 +475,15 @@
       root: root, check: check, time: time, nameText: nameText, nameEdit: nameEdit,
       toggle: toggle, statusText: statusText, lastResultText: lastResultText, multiSpan: multiSpan, attach: attach,
       children: children, expanded: false, editing: false,
+      // 콘솔이 준 원본. 어느 런타임을 보는지 등 행이 스스로 답해야 할 것이 여기 있다.
+      robot: robot,
     };
   }
 
   function updateRow(robot) {
     var cache = rowCache[robot.robot_id];
     if (!cache) return;
+    cache.robot = robot;
     cache.root.classList.toggle('hangeul-row-selected', robot.robot_id === selectedRobotId);
     if (!cache.editing) {
       cache.nameText.textContent = uiLang === 'en' ? robot.robot_id : robot.display_name;
@@ -688,6 +699,31 @@
 
   // 다중 실행: 기존과 동일하게 안전 확인 팝업(s-modal)을 먼저 통과해야
   // 서버에 요청한다. 서버는 전체 검증 통과 시에만 시작한다.
+  // 상태점검 — **고른 자리에서 누른다.** 체크박스가 이미 여기 있으므로
+  // 로봇이 수십 대로 늘어도 고르고 바로 누르면 된다.
+  function runMultiSelfCheck() {
+    var ids = checkedRobotIds();
+    if (ids.length === 0) {
+      styledAlert(hi18n().checkNone);
+      return;
+    }
+    // **같은 팔은 한 번만 점검한다.** 로봇 두 대가 같은 런타임을 보면 같은
+    // 팔이다. 두 번 돌리면 그 팔만 두 배로 닳고, 사람은 같은 결과를 두 번 본다.
+    var seen = {};
+    ids = ids.filter(function (robotId) {
+      var row = rowCache[robotId];
+      var where = (row && row.robot && row.robot.runtime_url) || robotId;
+      if (seen[where]) return false;
+      seen[where] = true;
+      return true;
+    });
+    // 안전 확인과 결과 표시는 **기존 것**을 쓴다(simple.js). 점검용으로
+    // 또 만들면 사람이 두 가지를 외워야 한다.
+    if (typeof window.startSelfCheckFor === 'function') {
+      window.startSelfCheckFor(ids);
+    }
+  }
+
   function runMultiExecute() {
     var entries = checkedRobotIds().map(function (robotId) {
       return { robot_id: robotId, start_at: rowCache[robotId].time.value || '' };
@@ -1284,6 +1320,10 @@
   }
   if (multiResetBtn) {
     multiResetBtn.addEventListener('click', resetMultiRuns);
+  }
+  var multiCheckBtn = document.getElementById('hangeul-multi-check');
+  if (multiCheckBtn) {
+    multiCheckBtn.addEventListener('click', runMultiSelfCheck);
   }
   var assignBtn = document.getElementById('btn-assign');
   if (assignBtn) {

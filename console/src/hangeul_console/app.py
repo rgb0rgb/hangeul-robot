@@ -274,6 +274,11 @@ def _robot_row(instance) -> dict[str, Any]:
         "display_name": instance.display_name,
         "enabled": True,
         "model": (instance.arm().module_id if instance.arm() else ""),
+        # **어느 팔을 가리키는가.** 로봇 두 대가 같은 런타임을 보면 같은 팔이다.
+        # 화면이 이걸 모르면 같은 팔을 두 번 점검한다(2026-09-24 전수조사:
+        # 등록된 4대가 런타임 2개를 나눠 쓰고 있었다).
+        "runtime_url": instance.runtime_url,
+        "shares_runtime_with": instance.shares_runtime_with,
         "adapter": "runtime_link",
         # 화면의 '로봇 선택' 목록은 부품 종류(arm_omx 등)로 되어 있다.
         # **사람이 고른 값을 그대로 돌려준다.** 여기서 매번 다시 계산해 덮으면
@@ -623,6 +628,150 @@ def append_log(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
 
 
 # ── 화면 계약: 기능 신호등(새로 추가된 것) ──────────────────────
+@app.post("/api/self-check")
+def self_check(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    """상태점검(시운전)을 로봇에 시킨다. **로봇이 움직인다.**
+
+    사람이 옆에 있는지와 주변이 비었는지는 런타임이 다시 확인한다 —
+    콘솔에서 한 확인을 런타임이 믿고 넘어가면, 콘솔을 거치지 않는 요청이
+    그 확인을 건너뛴다.
+    """
+    instance = _instance(str(payload.get("robot_id") or "")) if payload.get("robot_id") \
+        else _selected()
+    body = {k: v for k, v in payload.items() if k != "robot_id"}
+    body.setdefault("operator", "운영자")
+    answer = runtime.forward(instance, "/api/self-check", body)
+    idle = {"joints": {}, "labels": {}, "steps": [], "verdict": "",
+            "stopped": "", "usage": {}}
+    merged = {**idle, **answer}
+    if not merged.get("joints") and not merged.get("stopped"):
+        # 막힌 이유를 화면이 볼 자리 하나에 모아 준다. 여기저기 흩어 두면
+        # 화면이 전부를 뒤져야 하고, 한 곳만 보면 아무 말도 못 한다.
+        merged["stopped"] = "; ".join(answer.get("blocked_reasons") or []) \
+            or str(answer.get("reason") or answer.get("error")
+                   or "런타임에 연결하지 못했습니다")
+    return merged
+
+
+@app.get("/api/usage")
+def get_usage(robot_id: str = "") -> dict:
+    """주행거리계. 기록이 없으면 **없다고 말한다** — 0으로 꾸미지 않는다."""
+    instance = _instance(robot_id) if robot_id else _selected()
+    answer = runtime.forward(instance, "/api/usage", None, method="GET")
+    idle = {"has_history": False, "move_count": 0, "moving_seconds": 0.0,
+            "joints": {}, "labels": {}, "busiest_joint": "", "last_self_check_at": "",
+            "last_self_check_verdict": "", "started_at": "", "updated_at": ""}
+    if not answer.get("ok"):
+        idle["reason"] = str(answer.get("reason") or answer.get("error")
+                             or "런타임에 연결하지 못했습니다")
+    return {**idle, **answer}
+
+
+@app.get("/api/restamp-poses/preview")
+def restamp_preview(robot_id: str = "") -> dict:
+    """**누르기 전에 몇 개가 대상인지 센다.** 모르고 누르게 하지 않는다.
+
+    아무것도 바꾸지 않는다. 읽기만 한다.
+    """
+    movable = skipped = 0
+    per_robot: dict[str, int] = {}
+    seen: set[str] = set()
+    for instance in registry.all():
+        if robot_id and instance.instance_id != robot_id:
+            continue
+        # 같은 팔을 쓰는 로봇은 자세 창고를 함께 쓴다. 두 번 세지 않는다.
+        family = _family_of(instance.instance_id) or instance.instance_id
+        if family in seen:
+            continue
+        seen.add(family)
+        poses = (_poses(instance.instance_id).poses().get("poses") or {})
+        now, legacy = instance.fingerprint(), instance.legacy_fingerprint()
+        here = 0
+        for pose in poses.values():
+            if not isinstance(pose, dict):
+                continue
+            stamped = str(pose.get("configuration_fingerprint") or "")
+            if not stamped or stamped == now:
+                continue
+            if stamped == legacy:
+                here += 1
+            else:
+                skipped += 1
+        if here:
+            per_robot[instance.instance_id] = here
+            movable += here
+    return {"ok": True, "movable": movable, "skipped": skipped, "robots": per_robot}
+
+
+@app.post("/api/restamp-poses")
+def restamp_poses(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    """지문 계산식이 바뀌기 전에 저장된 자세를 **확인 후 이어받는다.**
+
+    **증명할 수 있는 것만 옮긴다.** 옛 지문이 지금 구성의 옛 계산값과 정확히
+    같을 때만 손댄다 — 그건 부품·자리·관절·command가 그대로라는 뜻이다.
+    그 밖의 자세는 건드리지 않는다. 부품이 진짜 바뀐 것을 섞어 옮기면
+    엉뚱한 관절값이 되살아난다.
+
+    단위·교정이 실제로 바뀌었는지는 옛 기록만으로 알 수 없다. 그래서
+    **사람이 확인해야** 한다 — 자동으로 하지 않는다.
+    """
+    operator = str(payload.get("operator") or "").strip()
+    if not operator or not payload.get("confirmed"):
+        return {"ok": False, "error": "누가 확인했는지 밝히고 확인해야 합니다"}
+
+    wanted = str(payload.get("robot_id") or "")
+    moved, skipped, per_robot = 0, 0, {}
+    for instance in registry.all():
+        if wanted and instance.instance_id != wanted:
+            continue
+        doc = _poses(instance.instance_id).poses()
+        poses = doc.get("poses") or {}
+        now, legacy = instance.fingerprint(), instance.legacy_fingerprint()
+        changed = 0
+        for pose in poses.values():
+            if not isinstance(pose, dict):
+                continue
+            stamped = str(pose.get("configuration_fingerprint") or "")
+            if not stamped or stamped == now:
+                continue
+            if stamped != legacy:
+                skipped += 1            # 부품이 진짜 달라진 것 — 건드리지 않는다
+                continue
+            pose["configuration_fingerprint"] = now
+            # **검증 등급은 올리지 않는다.** 옮긴 것이지 새로 확인한 것이 아니다.
+            pose.setdefault("verification", "UNVERIFIED")
+            pose["restamped_by"] = operator
+            pose["restamped_at"] = datetime.now().isoformat(timespec="seconds")
+            changed += 1
+        if changed:
+            _poses(instance.instance_id).save_poses(doc)
+            per_robot[instance.instance_id] = changed
+            moved += changed
+    _log(f"옛 자세 이어받기: {moved}개 (확인: {operator})"
+         + (f" · 부품이 달라진 {skipped}개는 그대로 둠" if skipped else ""))
+    return {"ok": True, "moved": moved, "skipped": skipped, "robots": per_robot}
+
+
+@app.post("/api/attest-parts")
+def attest_parts(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    """부품 응답을 지금 다시 확인한다. 사람이 무언가를 꽂거나 뺀 뒤 누른다.
+
+    폴링으로는 하지 않는다 — 확인은 버스를 쓰는 일이라 움직이는 중에
+    끼어들면 안 된다. 그래서 사람이 시킬 때만 한다.
+    """
+    instance = _instance(str(payload.get("robot_id") or "")) if payload.get("robot_id") \
+        else _selected()
+    answer = runtime.forward(instance, "/api/attest-parts", {})
+    # **화면이 읽는 이름을 언제나 준다.** 런타임에 닿지 못하면 위 응답에는
+    # success/verdict/reason만 들어 있고, 화면이 보는 자리는 통째로 빈다 —
+    # 그러면 사람은 아무 말도 못 듣고 기능이 없는 줄 안다(C11에서 다섯 번 겪은 일).
+    idle = {"parts": {}, "parts_checked_at": "", "parts_error": "", "parts_reason": ""}
+    if not answer.get("ok"):
+        idle["parts_reason"] = str(answer.get("reason") or answer.get("error")
+                                   or "런타임에 연결하지 못했습니다")
+    return {**idle, **answer}
+
+
 @app.get("/api/capabilities")
 def get_capabilities(instance_id: str = "") -> dict:
     instance = _instance(instance_id) if instance_id else _selected()
@@ -706,12 +855,30 @@ def _execute_pose(instance, payload: dict[str, Any], *, in_sequence: bool = Fals
     # 손을 바꾸거나 축이 줄면 옛 관절값은 다른 곳을 가리킨다 — 다시 가르쳐야 한다.
     stamped = str(pose.get("configuration_fingerprint") or "")
     if stamped and stamped != instance.fingerprint():
+        # **왜 다른지를 가려서 말한다.**
+        # 지문 계산식에 단위·교정이 들어가면서(v2) 부품이 하나도 안 바뀌어도
+        # 옛 지문이 전부 어긋났다. 그런데 화면에는 "부품이 바뀐 뒤로"라고
+        # 떴다 — 사실이 아닌 말이다(2026-09-24 전수조사: 실제 자세 13개 중
+        # 9개가 이 경우였다). 사람이 바꾸지도 않은 부품을 찾게 만든다.
+        if stamped == instance.legacy_fingerprint():
+            _log(f"{instance.display_name}: 실행 차단 — 지문 계산식이 바뀌기 전에 저장된 자세"
+                 f"({skill_id})", "s-log-err")
+            return {"verdict": "BLOCKED_FINGERPRINT_FORMAT_CHANGED",
+                    "blocked_reasons": [
+                        "이 자세는 단위·교정이 지문에 들어가기 전에 저장됐습니다. "
+                        "부품은 그대로이고 값도 그대로 있습니다. "
+                        "환경설정 → '🗂 옛 자세 이어받기'에서 한 번에 확인하거나, "
+                        "다시 저장하세요"],
+                    "can_restamp": True,
+                    "taught_with": stamped, "current_configuration": instance.fingerprint(),
+                    "actual_hardware_called": False}
         _log(f"{instance.display_name}: 실행 차단 — 부품이 바뀐 뒤 다시 가르치지 않은 자세"
              f"({skill_id})", "s-log-err")
         return {"verdict": "BLOCKED_PART_CHANGED",
                 "blocked_reasons": [
                     "부품이 바뀐 뒤로 이 자세를 다시 가르치지 않았습니다. "
                     "로봇을 원하는 자세로 옮긴 뒤 '자세 저장'으로 다시 저장하세요"],
+                "can_restamp": False,
                 "taught_with": stamped, "current_configuration": instance.fingerprint(),
                 "actual_hardware_called": False}
     passthrough = {k: v for k, v in payload.items()
@@ -1864,6 +2031,7 @@ class FreshFiles(StaticFiles):
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html", headers=NO_CACHE)
+
 
 
 if WEB_DIR.is_dir():

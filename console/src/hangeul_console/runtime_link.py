@@ -133,11 +133,16 @@ class RuntimeLink:
             "connected": True,
             "simulated": False,
             "reason": "",
-            "capability_health": {"_default": "AVAILABLE"},
+            # 언제 본 것인지는 **여기**에 싣는다. 값이 원래 문자열인 자리다.
+            "capability_health": {"_default": "AVAILABLE",
+                                  "_checked_at": data.get("parts_checked_at") or ""},
             # 런타임이 부품별 응답을 올렸으면 그대로 넘긴다. 비어 있으면
             # "부품별로 말할 수단이 없다"는 뜻이고, 없는 근거를 지어내지 않는다.
-            "parts": {**(data.get("parts") or {}),
-                      "_checked_at": data.get("parts_checked_at") or ""},
+            #
+            # **부품 정보만 담는다.** 전에는 여기에 시각(문자열)을 같이 넣었다가
+            # 값의 모양이 둘이 되어, 부품을 훑는 자리에서 문자열에 .get()을
+            # 부르고 터졌다(2026-09-24 전수조사에서 발견).
+            "parts": dict(data.get("parts") or {}),
             "runtime": data,
         }
 

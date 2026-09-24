@@ -127,6 +127,10 @@ class CapabilityStore:
                  parts: dict[str, dict[str, Any]] | None = None) -> list[CapabilityState]:
         """`parts`는 런타임이 올린 **부품 종류별 응답**이다.
 
+        **부품 정보만 들어간다.** 시각 같은 딴것을 섞으면 값의 모양이 둘이
+        되고, 부품을 훑는 자리에서 터진다(2026-09-24에 실제로 그랬다).
+        언제 본 것인지는 `health`의 `_checked_at`에 있다.
+
         비어 있으면 "부품별로 말할 수단이 없다"는 뜻이고, 그때는 전부
         UNVERIFIABLE이 된다. 수단이 없는 것을 정상으로 바꾸지 않는다.
         """
@@ -187,7 +191,7 @@ class CapabilityStore:
                 reason=reason, checked_at=checked, evidence_ref=evidence,
                 attestation=attestation, attestation_reason=attest_reason,
                 attestation_evidence=str(part.get("evidence") or ""),
-                attestation_checked_at=str(parts_map.get("_checked_at") or "")))
+                attestation_checked_at=str(health_map.get("_checked_at") or "")))
         return out
 
     def visible(self, config, health: dict[str, str] | None = None,

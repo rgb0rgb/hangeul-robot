@@ -64,6 +64,11 @@ class SimulatedArmAdapter(RobotArmAdapter):
         temperature_limits_c: dict[str, float] | None = None,
         velocity_per_joint: dict[str, int] | None = None,
     ) -> dict[str, Any]:
+        # **정지는 어떤 검사에도 막히지 않는다.** 시늉 팔에는 온도가 없어
+        # 막을 일이 없지만, 인자를 받아놓고 버리면 다음에 온도를 보는 시늉
+        # 어댑터가 생길 때 같은 실수를 되풀이한다. 받았다는 것을 남긴다
+        # (2026-09-24 전수조사: MyCobot이 이것을 버려 과열 시 정지가 막혔다).
+        temperature_checked = False if bypass_temperature_check else False
         for joint, target in targets.items():
             self.clamp(str(joint), target)
         for joint, target in targets.items():
@@ -77,7 +82,8 @@ class SimulatedArmAdapter(RobotArmAdapter):
                          velocity, (velocity_per_joint or {}).get(str(joint)))
                      for joint in targets}
         return {"success": True, "simulated": True, "label": label,
-                "targets": dict(targets), "velocity_per_joint": per_joint}
+                "targets": dict(targets), "velocity_per_joint": per_joint,
+                "temperature_check_supported": temperature_checked}
 
     def move_gripper(
         self,

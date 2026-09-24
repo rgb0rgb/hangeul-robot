@@ -59,6 +59,7 @@ window.DEXTER_UI_TITLE = 'Hangeul Robot';
         </div>
         <button class="s-settings-action" id="btn-settings-help" onclick="openHangeulSettingsHelp()">도움말</button>
         <button class="s-settings-action" id="btn-lang">English</button>
+        <button class="s-settings-action" id="btn-restamp" onclick="openRestampModal()" title="지문 계산식이 바뀌기 전에 저장된 자세를 확인하고 이어받습니다. 부품이 진짜 바뀐 자세는 건드리지 않습니다.">🗂 옛 자세 이어받기</button>
         <button class="s-settings-action" id="btn-server-restart-help" onclick="openServerRestartHelp()">서버 재시작</button>
         <button class="s-settings-action" id="btn-sec-monitoring" onclick="openSecurityModal()">보안 모니터링<span id="sec-alert-dot" class="s-sec-alert-badge" style="display:none;"></span></button>
         <button class="s-settings-action" id="btn-sllm-helper" onclick="openSllmModal()" title="말로 찾기 — 저장된 자세/순서 중에서 후보만 제안합니다. 실행은 기존 확인 절차를 그대로 거칩니다.">🧠 SLLM 도우미</button>
@@ -98,6 +99,8 @@ window.DEXTER_UI_TITLE = 'Hangeul Robot';
                 title="예약/진행 중인 다중 실행을 모두 취소합니다">⏹ 예약 취소</button>
         <button class="s-btn s-btn-ghost s-btn-sm" id="hangeul-multi-reset" type="button"
                 title="완료/실패/취소된 다중 실행 표시와 체크박스/예약 시각을 처음 상태로 되돌립니다 (예약·진행 중인 항목은 그대로 둡니다)">🔄 초기화</button>
+        <button class="s-btn s-btn-ghost s-btn-sm" id="hangeul-multi-check" type="button"
+                title="체크한 로봇들을 한 대씩 조금 움직여 보고 부품마다 이상 여부를 알려 줍니다 (안전 확인 후)">🔧 상태점검</button>
       </div>
     </div>
 
@@ -411,10 +414,47 @@ window.DEXTER_UI_TITLE = 'Hangeul Robot';
       <div class="s-modal-item"><span class="s-modal-item-icon">🚫</span><span id="m-item3">로봇 가동 범위 안에 사람이 없다</span></div>
       <div class="s-modal-item"><span class="s-modal-item-icon">✋</span><span id="m-item4">수동 정지 장치를 손에 닿는 곳에 두었다</span></div>
       <div class="s-modal-item"><span class="s-modal-item-icon">🔴</span><span id="m-item5">비상 정지(E-Stop)가 준비되어 있다</span></div>
+      <!-- 상태점검일 때만 보인다. 로봇마다 안전한 자세가 달라 코드가 정할 수 없고,
+           운영자가 이미 자기 동작 순서를 갖고 있으므로 **알리기만** 한다. -->
+      <div class="s-modal-item" id="m-item-home" style="display:none;"><span class="s-modal-item-icon">🏁</span><span id="m-item-home-text">로봇을 기본 자세에 두고 시작한다</span></div>
     </div>
     <div class="s-modal-btns">
       <button class="s-btn s-btn-ghost" id="btn-modal-cancel">취소</button>
       <button class="s-btn s-btn-danger" id="btn-modal-confirm">모두 확인 → 실행</button>
+    </div>
+  </div>
+</div>
+
+<!-- 상태점검 — 쓰기 전에 조금 움직여 보고 부품마다 알려 준다 -->
+<div class="s-modal-overlay" id="s-check-modal" style="display:none">
+  <div class="s-modal" style="max-width: 520px;">
+    <div class="s-modal-title" id="check-modal-title">🔧 상태점검</div>
+    <div style="margin-bottom:14px; font-size:0.85rem; color:#94a3b8;" id="check-modal-subtitle">
+      체크한 로봇을 한 대씩 조금 움직여 보고 부품마다 알려 줍니다. 응답하지 않는 곳은 움직여 보지 않습니다.
+    </div>
+    <div id="check-msg" style="font-size:0.85rem; color:#94a3b8; min-height:1.4em; margin-bottom:10px;"></div>
+    <div id="check-result" style="text-align:left; font-size:0.9rem;"></div>
+    <div id="check-usage" style="text-align:left; font-size:0.85rem; color:#94a3b8; margin-top:16px;"></div>
+    <div class="s-modal-btns" style="margin-top:16px;">
+      <button class="s-btn s-btn-ghost" id="btn-check-close" onclick="closeSelfCheckModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 옛 자세 이어받기 — 지문 계산식이 바뀌어도 가르친 것을 잃지 않게 -->
+<div class="s-modal-overlay" id="s-restamp-modal" style="display:none">
+  <div class="s-modal" style="max-width: 520px;">
+    <div class="s-modal-title" id="restamp-title">🗂 옛 자세 이어받기</div>
+    <div style="margin-bottom:14px; font-size:0.85rem; color:#94a3b8; text-align:left;" id="restamp-subtitle">
+      지문 계산식에 단위·교정이 들어가면서, 부품이 바뀌지 않았는데도 그전에 저장한
+      자세가 막힐 수 있습니다. 값은 그대로 있습니다. 확인하면 한 번에 이어받습니다.
+      <b>부품이 진짜 바뀐 자세는 건드리지 않습니다.</b>
+    </div>
+    <div id="restamp-count" style="text-align:left; font-size:0.9rem; margin-bottom:12px;"></div>
+    <div id="restamp-msg" style="font-size:0.85rem; color:#94a3b8; min-height:1.4em;"></div>
+    <div class="s-modal-btns" style="margin-top:14px;">
+      <button class="s-btn s-btn-danger" id="btn-restamp-run" onclick="runRestamp()">확인하고 이어받기</button>
+      <button class="s-btn s-btn-ghost" id="btn-restamp-close" onclick="closeRestampModal()">닫기</button>
     </div>
   </div>
 </div>

@@ -67,8 +67,15 @@ class SafetyState:
     # 직접 대입(state.paused = True)도 메서드 호출도 모두 잡아야 하므로
     # __setattr__에서 건다. 호출부마다 저장을 기억하게 만들면 언젠가 빠뜨린다.
     def __setattr__(self, name: str, value: Any) -> None:
+        # **바뀔 때만 쓴다.** 여러 경로가 `disconnect_latched = False`를 조건 없이
+        # 대입한다. 그때마다 파일을 다시 쓰면 디스크를 쉬지 않고 두드리고,
+        # 아무 일도 없었는데 저장 시각만 계속 바뀐다
+        # (2026-09-24 전수조사에서 발견).
+        changed = (name in PERSISTED_FIELDS
+                   and getattr(self, name, object()) != value
+                   and getattr(self, "_loading", False) is False)
         object.__setattr__(self, name, value)
-        if name in PERSISTED_FIELDS and getattr(self, "_loading", False) is False:
+        if changed:
             self._write_through()
 
     def bind_storage(self, path: "str | Path") -> dict[str, Any]:
@@ -166,7 +173,7 @@ class SafetyState:
         }
 
 
-def check_move(state: SafetyState, joint_id: int, target: int,
+def check_move(state: SafetyState, joint_id: int | str, target: int,
                limits: dict[str, list[int]] | None, velocity: int | None) -> int:
     """이동 요청을 검사하고 안전한 속도를 돌려준다. 막히면 예외를 올린다."""
     if state.estop_latched:
