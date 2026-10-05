@@ -86,7 +86,10 @@ class RuntimeLink:
             return {"ok": False, "status": exc.code, "data": detail,
                     "reason": f"런타임 응답 오류 {exc.code}"}
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
-            return {"ok": False, "reason": f"런타임에 연결하지 못했습니다 ({exc.__class__.__name__})"}
+            # 연결 거부는 '그 포트에 아무도 없다'는 확답이다 — 응답이 늦은 것과 다르다.
+            cause = getattr(exc, "reason", exc)
+            return {"ok": False, "refused": isinstance(cause, ConnectionRefusedError),
+                    "reason": f"런타임에 연결하지 못했습니다 ({exc.__class__.__name__})"}
 
     # 로봇 런타임(Grid)에는 종합 status 엔드포인트가 없다. 실제로 있는 것 중
     # 부작용 없는 읽기 전용 경로를 살아있음 확인에 쓴다.

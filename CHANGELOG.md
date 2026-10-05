@@ -1,3 +1,8 @@
+# 0.4.1 — Emergency stop no longer blames robots on standby (2026-10-05)
+
+- A robot whose runtime is not running (connection refused) is logged as skipped, not as
+  "did not respond". A runtime that is up but times out or refuses is still reported.
+
 # 0.4.0 — OMX J13 current limit, recovery result validation (2026-10-05)
 
 Safety behaviour changed, so the minor version goes up.
@@ -9,8 +14,7 @@ Safety behaviour changed, so the minor version goes up.
   we have seen (802). **Not yet re-run on the physical arm at the new limit.**
 - Each move result now reports the peak current per joint (`peak_currents`), so the next
   adjustment can come from measurements.
-- Emergency-stop warnings name robots by display name instead of internal ID. Robots whose
-  runtime is not running are still counted as "did not respond".
+- Emergency-stop warnings name robots by display name instead of internal ID.
 
 ### Recovery result validation (prepared 2026-09-25)
 

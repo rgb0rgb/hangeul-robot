@@ -1023,8 +1023,10 @@ def estop(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     results = [{"robot_id": i.instance_id, "robot_label": i.display_name, **runtime.stop(i)}
                for i in targets]
     # 런타임이 떠 있지 않은 로봇(목록에만 있고 대기 중)은 움직일 수단이 없으니
-    # 못 멈춘 것이 아니다. 다만 absent는 runtime_link가 '연결 거부'를 확답할 때만
-    # 참이 되는데, 그 판별은 아직 없다 — 지금은 대기 로봇도 '응답 없음'으로 센다.
+    # 못 멈춘 것이 아니다. 전에는 이것까지 '응답 없음'으로 세어, OMX 한 대만
+    # 쓰는데도 정지할 때마다 "2대가 응답하지 않았습니다"가 떴다(2026-10-05).
+    # absent는 연결 거부(그 포트에 아무도 없음)일 때만 참이다 — 응답이 늦거나
+    # 거절한 런타임은 여전히 '못 멈춤'으로 센다.
     # 이름은 내부 ID 대신 화면 이름을 쓴다(2026-10-05: "robot_6"이 누군지 몰랐다).
     absent = [r for r in results if not r.get("stopped") and r.get("absent")]
     failed = [r for r in results if not r.get("stopped") and not r.get("absent")]
