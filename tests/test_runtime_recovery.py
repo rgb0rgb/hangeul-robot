@@ -100,3 +100,89 @@ def test_limits_come_from_the_part_descriptor():
     bands = server._normalize_limits({"1": [-84, 84], "7_min": 0, "7_max": 100})
     assert bands["1"] == [-84000, 84000]     # 도 → 밀리도
     assert bands["7"] == [0, 100]
+
+
+@pytest.mark.parametrize("hold", [{"success": False}, {"settled": False}, {"result_ok": False},
+                                   {"success": True, "timed_out": True}, {}, None])
+def test_failed_or_unknown_hold_never_unlocks_robot(runtime, monkeypatch, hold):
+    server.state.latch_estop("original stop")
+    server.state.latch_disconnect("fault")
+    monkeypatch.setattr(runtime, "move_joints", lambda *a, **kw: hold)
+    answer = server.estop_reset({"operator": "test", "confirmed": True})
+    assert not answer["success"] and not answer["ready"]
+    assert server.state.estop_latched and server.state.disconnect_latched
+    assert answer["disconnect_recovery"]["held"] is False
+
+
+@pytest.mark.parametrize("report", [
+    {"12": {"hardware_error_before": 32, "rebooted": False, "hardware_error_after": 32}},
+    {"12": {"hardware_error_before": 32, "rebooted": True, "hardware_error_after": None}},
+    {"12": {"hardware_error_before": None, "read_before_error": "no response"}},
+    {"error_information_after": 4}, {"servo_not_responding": ["12"]}, {"clear_failed": "failed"},
+])
+def test_remaining_fault_never_claims_success_or_enables_hold(runtime, monkeypatch, report):
+    monkeypatch.setattr(runtime, "recover_from_fault", lambda: report)
+    answer = server.estop_reset({"operator": "test", "confirmed": True})
+    assert not answer["success"] and server.state.disconnect_latched
+    assert runtime.held is None
+
+
+def test_exception_in_recovery_is_not_discarded(runtime, monkeypatch):
+    def fail():
+        raise RuntimeError("reboot failed")
+    monkeypatch.setattr(runtime, "recover_from_fault", fail)
+    answer = server.estop_reset({"operator": "test", "confirmed": True})
+    assert not answer["success"] and "reboot failed" in answer["error"]
+
+
+def test_missing_joint_is_not_a_successful_recovery(runtime):
+    del runtime.position["12"]
+    answer = server.estop_reset({"operator": "test", "confirmed": True})
+    assert not answer["success"] and "12" in answer["error"]
+
+
+def test_restart_recovers_fault_but_never_clears_operator_stop(runtime):
+    answer = server.recover_after_restart({"operator": "launcher", "confirmed": True})
+    assert answer["success"] and answer["ready"] and runtime.rebooted
+    runtime.rebooted = False
+    server.state.latch_estop("operator")
+    answer = server.recover_after_restart({"operator": "launcher", "confirmed": True})
+    assert not answer["success"] and answer["readiness"] == "needs_operator"
+    assert not runtime.rebooted and server.state.estop_latched
+
+
+def test_new_stop_during_recovery_is_not_cleared(runtime, monkeypatch):
+    recover = runtime.recover_from_fault
+    def interrupted():
+        answer = recover()
+        server.estop({"reason": "new stop"})
+        return answer
+    monkeypatch.setattr(runtime, "recover_from_fault", interrupted)
+    answer = server.estop_reset({"operator": "test", "confirmed": True})
+    assert not answer["success"] and server.state.estop_latched
+
+
+def test_busy_job_or_missing_confirmation_never_reboots(runtime):
+    assert not server.recover_after_restart({})["success"]
+    with server._exclusive("movement"):
+        answer = server.estop_reset({"operator": "test", "confirmed": True})
+    assert answer["verdict"] == "BLOCKED_BUSY" and not runtime.rebooted
+
+
+def test_rebooted_gripper_is_held_at_its_current_position(runtime, monkeypatch):
+    runtime.faulted = False
+    monkeypatch.setattr(runtime, "recover_from_fault", lambda: {"15": {
+        "hardware_error_before": 32, "rebooted": True, "hardware_error_after": 0}})
+    holds = []
+    monkeypatch.setattr(runtime, "move_gripper", lambda target, **kw: holds.append(target) or {"success": True}, raising=False)
+    answer = server.recover_after_restart({"operator": "test", "confirmed": True})
+    assert answer["ready"] and holds == [1900]
+
+
+def test_unexpected_simulation_does_not_report_physical_recovery(runtime):
+    server.CONFIG["adapter"] = None
+    server.CONFIG["simulation_requested"] = False
+    server.state.latch_estop("fault")
+    answer = server.estop_reset({"operator": "test", "confirmed": True})
+    assert not answer["success"] and not answer["ready"]
+    assert answer["readiness"] == "disconnected" and server.state.estop_latched

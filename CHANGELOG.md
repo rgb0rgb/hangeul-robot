@@ -1,3 +1,30 @@
+# 0.4.0 — OMX J13 current limit, recovery result validation (2026-10-05)
+
+Safety behaviour changed, so the minor version goes up.
+
+- **OMX J13 current limit raised from 210/240 to 280/340** (sustained/instant, raw units).
+  The "standing" pose (J12/J13 ≈ 1910, forearm level) puts the largest gravity load on J13.
+  On the way back into it, J13 read 217 and 220 three samples in a row and a normal sequence
+  was stopped twice. 280 ≈ 0.75 A and 340 ≈ 0.91 A are still less than half the fault value
+  we have seen (802). **Not yet re-run on the physical arm at the new limit.**
+- Each move result now reports the peak current per joint (`peak_currents`), so the next
+  adjustment can come from measurements.
+- Emergency-stop warnings name robots by display name instead of internal ID. Robots whose
+  runtime is not running are still counted as "did not respond".
+
+### Recovery result validation (prepared 2026-09-25)
+
+- Verify remaining motor faults, complete position reads and hold results before
+  reporting recovery success; keep movement blocked on failure.
+- Confirmed full reset invokes hardware recovery after startup while preserving
+  emergency stop and away mode. Normal start/ensure never invokes motor recovery.
+- Report process startup and robot readiness separately, including unexpected
+  simulation fallback and missing recovery responses.
+- Describe motor reboot and torque release in the restart confirmation dialog.
+- Add regression coverage for recovery failures and stop requests during recovery.
+- Software and mock-device validation only; supervised physical recovery testing
+  is still pending. See [recovery behaviour](docs/RECOVERY_RESET_BEHAVIOR.md).
+
 # 0.3.0 — Windows one-click setup, full reset, repeat work (2026-09-24)
 
 - **Windows one-click setup.** `Setup.bat` installs Python when missing (winget), creates `.venv`,

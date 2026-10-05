@@ -4324,8 +4324,10 @@ function hasDisconnectLatchBlock(reasons) {
 }
 
 function recoverRobotUsbFromUi() {
-  slog(lang === 'ko' ? 'USB 복구 시작: 로봇 포트를 read-only로 재탐색합니다.' : 'USB recovery started: probing robot ports read-only.', 's-log-info');
-  return fetch(BACKEND + '/api/recover-robot-usb', { method: 'POST' })
+  slog(lang === 'ko' ? 'USB 연결과 모터 오류 복구를 확인합니다.' : 'Recovering the USB connection and motor faults.', 's-log-info');
+  return fetch(BACKEND + '/api/recover-robot-usb', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({operator:'web_operator', confirmed:true}) })
     .then(function(r) { return r.json().then(function(d) { d._status = r.status; return d; }); })
     .then(function(d) {
       if (!d.success) {
@@ -4370,8 +4372,8 @@ function openServerRestartHelp() {
   // 사람은 알 수 없었다(2026-09-24). 이제 돌아올 때까지 기다렸다가 결과를 보여 준다.
   // **비상 정지는 풀지 않는다** — 정지 해제는 사람이 로봇을 보고 한다.
   var confirmMsg = lang === 'ko'
-    ? '콘솔과 로봇 프로그램을 모두 끄고 처음부터 다시 시작합니다. 팔에는 명령을 보내지 않지만, 연결이 다시 열릴 때 스스로 초기화되는 팔이 있으니 팔을 낮은 자세에 두고 누르세요. 30초쯤 걸립니다. 계속할까요?'
-    : 'Stop the console and robot programs and start everything again. No command is sent to the arm, but some controllers reset when the connection reopens, so rest the arm low first. Takes about 30 seconds. Continue?';
+    ? '프로그램을 재시작한 뒤 모터 오류 복구와 현재 위치 유지를 확인합니다. 모터 재부팅 중 토크가 잠시 풀릴 수 있으니 팔을 낮은 자세에 두거나 받침으로 지지하세요. 비상 정지와 부재 모드는 유지하며 이전 작업은 자동 재개하지 않습니다. 현장에서 확인하며 진행할까요?'
+    : 'Restart programs, recover motor faults and verify holding the current position. Motor reboot may briefly release torque: lower or support the arm first. Emergency stop and away mode remain set; previous work will not resume automatically. Continue while supervising the robot?';
   confirmOrStyled(confirmMsg, lang === 'ko' ? '완전 초기화 후 재시작' : 'Full reset and restart', true).then(function (confirmed) {
     if (!confirmed) return;
     slog(lang === 'ko' ? '완전 초기화 요청 전송...' : 'Sending full reset request...', 's-log-info');
@@ -4383,7 +4385,7 @@ function openServerRestartHelp() {
         return fetch(BACKEND + '/api/server-restart', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ operator: 'web_operator' })
+          body: JSON.stringify({ operator: 'web_operator', confirmed: true })
         }).then(function (r) { return r.json(); });
       })
       .then(function (data) {
@@ -4407,6 +4409,7 @@ function waitForRestart(before, startedAt) {
   function done(report) {
     var lines = (report.runtimes || []).map(function (row) {
       return '· ' + (row.robots || []).join(', ') + ': ' + (words[row.state] || row.state)
+        + (row.ready === true ? (lang === 'ko' ? ' · 준비 확인' : ' · readiness verified') : (lang === 'ko' ? ' · 준비 미확인' : ' · readiness not verified'))
         + (row.message ? ' — ' + row.message : '');
     });
     (report.problems || []).forEach(function (p) { lines.push('· ' + p); });
@@ -4418,10 +4421,10 @@ function waitForRestart(before, startedAt) {
     setTimeout(function () { location.reload(); }, 300);
   }
   function tick() {
-    if (Date.now() - startedAt > 120000) {
+    if (Date.now() - startedAt > 300000) {
       alertOrStyled(lang === 'ko'
-        ? '2분이 지나도 돌아오지 않습니다. 바탕화면의 "한글 로봇 초기화"(Reset.bat)를 실행하세요.'
-        : 'Not back after 2 minutes. Run Reset.bat ("Hangeul Robot Reset" on the desktop).');
+        ? '5분이 지나도 복구 결과를 확인하지 못했습니다. data/run/last_report.json과 실행기 로그를 확인하세요.'
+        : 'Recovery was not confirmed after 5 minutes. Check data/run/last_report.json and the launcher log.');
       return;
     }
     fetch(BACKEND + '/api/launcher-report', { cache: 'no-store' })

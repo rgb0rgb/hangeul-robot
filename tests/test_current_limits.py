@@ -32,9 +32,10 @@ def test_the_descriptor_carries_the_limits_not_the_code():
     assert LIMITS.get("reason"), "왜 이 값인지 적혀 있지 않으면 다음 사람이 되돌린다"
 
 
-@pytest.mark.parametrize("current", [120, 144, 150, 205])
+@pytest.mark.parametrize("current", [120, 144, 150, 205, 217, 220])
 def test_a_normal_pose_does_not_trip_the_stop(current):
-    """실측된 정상값(141~150)에서 멈추면 안 된다 — 그 뒤 모든 동작이 막힌다."""
+    """실측된 정상값에서 멈추면 안 된다 — 그 뒤 모든 동작이 막힌다.
+    141~150은 보통 자세, 217·220은 '서 있기'(아래팔 수평)로 돌아올 때 실측(2026-10-05)."""
     blocked, _, _ = classify_joint_current_limit(13, current, 0, LIMITS)
     assert not blocked
     blocked_after, _, _ = classify_joint_current_limit(13, current, 2, LIMITS)
@@ -43,13 +44,13 @@ def test_a_normal_pose_does_not_trip_the_stop(current):
 
 def test_a_sustained_overload_still_stops():
     """넘긴 것이 계속 이어지면 막는다. 순간의 튐과 계속되는 과부하는 다르다."""
-    first, count, _ = classify_joint_current_limit(13, 215, 0, LIMITS)
+    first, count, _ = classify_joint_current_limit(13, 300, 0, LIMITS)
     assert not first, "한 번 튄 것으로 멈추면 정상 동작이 자주 끊긴다"
-    blocked, _, _ = classify_joint_current_limit(13, 215, 2, LIMITS)
+    blocked, _, _ = classify_joint_current_limit(13, 300, 2, LIMITS)
     assert blocked, "계속 넘기는데도 안 막으면 서보가 탄다"
 
 
-@pytest.mark.parametrize("current", [245, 400, 802])
+@pytest.mark.parametrize("current", [350, 400, 802])
 def test_a_real_fault_stops_on_the_first_reading(current):
     """실제 고장 때 나온 값(J14에서 802 관측)은 그 자리에서 막는다."""
     blocked, _, _ = classify_joint_current_limit(13, current, 0, LIMITS)

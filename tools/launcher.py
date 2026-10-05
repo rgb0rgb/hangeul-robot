@@ -20,8 +20,8 @@ ttyUSB0 → ttyUSB1 로 바뀌었다. 화면의 서버 재시작은 bash 스크�
   · 무엇을 띄웠고 무엇을 못 띄웠는지 **이유와 함께 남긴다** (data/run/last_report.json)
   · 죽일 때는 **이 폴더의 한글 로봇 프로세스만** 죽인다 — 포트 주인을 확인한다
 
-**정지(비상 정지) 래치는 풀지 않는다.** 초기화는 프로그램을 새로 띄우는
-일이고, 정지를 푸는 것은 사람이 화면에서 로봇을 보고 하는 일이다.
+**정지(비상 정지) 래치는 풀지 않는다.** 명시적인 reset은 기동 뒤 모터 복구와
+현재 위치 유지를 확인한다. start/ensure는 모터 복구를 호출하지 않는다.
 표준 라이브러리만 쓴다 — 설치가 반쯤 깨진 상태에서도 돌아야 하기 때문이다.
 """
 from __future__ import annotations
@@ -396,6 +396,7 @@ def start_runtime(group: dict[str, Any]) -> dict[str, Any]:
     if running is not None:
         row.update(state="already_running", device=running.get("device", ""),
                    message=_runtime_message(running))
+        row.update(_readiness(running, descriptors().get(module) or {}))
         return row
     desc = descriptors().get(module) or {}
     simulate = bool(desc.get("simulated"))
@@ -416,6 +417,44 @@ def start_runtime(group: dict[str, Any]) -> dict[str, Any]:
                    message=f"런타임이 답하지 않습니다 — data/runtime_{module}.log 를 보세요")
         return row
     row.update(state="started", device=answer.get("device", device), message=_runtime_message(answer))
+    row.update(_readiness(answer, desc))
+    return row
+
+
+def _readiness(status: dict[str, Any], descriptor: dict[str, Any]) -> dict[str, Any]:
+    if status.get("simulated"):
+        expected = bool(descriptor.get("simulated"))
+        return {"ready": expected, "readiness": "simulated" if expected else "disconnected",
+                "expected_simulation": expected}
+    if status.get("estop_active") or status.get("away_mode"):
+        return {"ready": False, "readiness": "needs_operator"}
+    return {"ready": False, "readiness": "not_checked"}
+
+
+def recover_runtime(row: dict[str, Any]) -> dict[str, Any]:
+    """Only explicit reset invokes motor recovery; start/ensure never do."""
+    if row["state"] not in ("started", "already_running") or row.get("readiness") == "disconnected":
+        row.update(ready=False, readiness="disconnected")
+        return row
+    if row.get("readiness") == "simulated":
+        return row
+    if row.get("readiness") == "needs_operator":
+        row["message"] += " · 비상 정지/부재 모드 확인이 필요합니다"
+        return row
+    url = f"http://127.0.0.1:{row['port']}/api/recover-after-restart"
+    request = urllib.request.Request(url, data=json.dumps({"operator": "launcher_reset", "confirmed": True}).encode(),
+                                     headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        row["recovery"] = result
+        row["ready"] = result.get("success") is True and result.get("ready") is True
+        row["readiness"] = "ready" if row["ready"] else result.get("readiness") or "fault_remaining"
+        row["message"] += " · " + ("복구 및 현재 위치 유지를 확인했습니다" if row["ready"]
+                                    else result.get("error") or "로봇 복구를 확인하지 못했습니다")
+    except Exception as exc:
+        row.update(ready=False, readiness="unknown")
+        row["message"] += f" · 복구 확인 응답을 받지 못했습니다 ({type(exc).__name__}: {exc})"
     return row
 
 
@@ -483,9 +522,15 @@ def up(action: str) -> dict[str, Any]:
     groups, problems = plan()
     report["problems"] = problems
     report["runtimes"] = [start_runtime(g) for g in groups]
+    if action == "reset":
+        report["runtimes"] = [recover_runtime(row) for row in report["runtimes"]]
     report["console"] = start_console() if action != "ensure" else {"state": "skipped"}
-    report["ok"] = report["console"]["state"] in ("started", "already_running", "skipped") and \
+    report["processes_started"] = report["console"]["state"] in ("started", "already_running", "skipped") and \
         all(r["state"] in ("started", "already_running") for r in report["runtimes"])
+    report["robots_ready"] = bool(report["runtimes"]) and all(r.get("ready") is True for r in report["runtimes"])
+    report["ok"] = report["processes_started"] and not problems and \
+        not any(r.get("readiness") == "disconnected" for r in report["runtimes"]) and \
+        (action != "reset" or report["robots_ready"] or not report["runtimes"])
     report["finished_at"] = _now()
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

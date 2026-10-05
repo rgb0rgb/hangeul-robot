@@ -28,6 +28,7 @@ from typing import Any
 from fastapi import Body, FastAPI, HTTPException
 
 from . import safety
+from .recovery import fault_errors, hold_verified
 from .usage_log import UsageLog
 from .hardware_errors import HardwareConnectionLostError, InFlightSafetyViolationError
 from .hardware_port_lock import HardwarePortBusyError, HardwarePortLock
@@ -47,6 +48,7 @@ SERIAL_LOCK = threading.RLock()
 # 그것은 멈춤이 아니다.
 _JOB: dict[str, Any] = {"name": "", "since": 0.0}
 _JOB_LOCK = threading.Lock()
+_stop_epoch = 0
 
 
 class _Busy(Exception):
@@ -559,47 +561,62 @@ def _stop_hardware() -> bool:
 
 
 def _recover_hardware(*, force: bool = False, may_reopen_link: bool = False) -> dict[str, Any]:
-    """서보에 걸린 오류 래치(과부하·과열·충격)를 풀고 그 자리에 다시 세운다.
-
-    사람이 정지를 풀었는데 로봇이 계속 안 움직이면 그건 해제가 아니다.
-    그래서 해제는 이 순서를 밟는다.
-
-        1. 오류가 걸린 관절을 REBOOT — 재시도로는 안 풀리는 래치를 푸는 표준 절차
-        2. 곧바로 토크를 켜고 지금 위치를 목표로 써서 그 자리에 세운다
-           (REBOOT 직후에는 토크가 꺼져 있어, 그냥 두면 팔이 처진다)
-    """
+    """Recover faults and verify the hold result without changing safety latches."""
     adapter = CONFIG.get("adapter")
     if adapter is None:
-        return {"attempted": False, "reason": "시늉 모드"}
-
-    # 되살리기 중 거친 부분(연결을 다시 여는 것)은 통신이 죽었을 때만 일어난다.
-    # 오류 해제·서보 재장악·재개는 멀쩡한 로봇에도 해가 없으므로 늘 한다 —
-    # 특히 재개(resume)를 빼먹으면 정지를 푼 뒤에도 로봇이 움직이지 않는다.
-    report: dict[str, Any] = {"attempted": True}
-    recover = getattr(adapter, "recover_from_fault", None)
-    if callable(recover):
+        return {"attempted": False, "success": False, "reason": "시늉 모드", "held": False,
+                "hold_error": "실물 어댑터가 없습니다"}
+    report: dict[str, Any] = {"attempted": True, "success": False, "held": False}
+    errors = []
+    with SERIAL_LOCK:
         try:
-            # 연결 다시 열기는 컨트롤러를 재부팅시켜 토크를 끊는다 — 팔이 떨어진다.
-            # 사람이 시킨 복구에서만 허락한다.
-            try:
-                answer = recover(may_reopen_link=may_reopen_link)
-            except TypeError:            # 그 신호를 모르는 어댑터도 있다
-                answer = recover()
-            report["joints"] = {str(k): v for k, v in (answer or {}).items()}
+            epoch = _stop_epoch
+            _ensure_link()
+            recover = getattr(adapter, "recover_from_fault", None)
+            if callable(recover):
+                import inspect
+                params = inspect.signature(recover).parameters
+                answer = recover(may_reopen_link=may_reopen_link) if "may_reopen_link" in params else recover()
+                if not isinstance(answer, dict):
+                    raise RuntimeError("복구 결과가 없거나 형식이 잘못되었습니다")
+                report["joints"] = {str(k): v for k, v in answer.items()}
+                errors.extend(fault_errors(report["joints"], _arm_joint_ids()))
+            if errors:
+                raise RuntimeError("; ".join(errors))
+            if epoch != _stop_epoch:
+                raise RuntimeError("복구 중 새 긴급 정지가 요청되었습니다")
+            present = {str(j): v for j, v in adapter.read_joint_positions().items()}
+            missing = set(_arm_joint_ids()) - set(present)
+            if missing:
+                raise RuntimeError("위치를 읽지 못한 관절: " + ", ".join(sorted(missing)))
+            arm = {j: present[j] for j in _arm_joint_ids()}
+            if not arm:
+                raise RuntimeError("위치를 유지할 팔 관절을 확인하지 못했습니다")
+            held = adapter.move_joints(arm, velocity=safety.DEFAULT_VELOCITY, acceleration=20,
+                                      label="recover_hold", temperature_limits_c=_temperature_limits())
+            report["hold_result"] = held
+            if not hold_verified(held):
+                raise RuntimeError("현재 위치 유지에 실패했거나 결과를 확인하지 못했습니다")
+            hand = _hand_joint_id()
+            hand_fault = (report.get("joints") or {}).get(hand) or {}
+            if isinstance(hand_fault, dict) and hand_fault.get("rebooted"):
+                if hand not in present or not callable(getattr(adapter, "move_gripper", None)):
+                    raise RuntimeError("재부팅한 손의 현재 위치 유지를 확인할 수 없습니다")
+                hand_hold = adapter.move_gripper(present[hand], velocity=safety.DEFAULT_VELOCITY,
+                                                 acceleration=20, label="recover_hand_hold")
+                report["hand_hold_result"] = hand_hold
+                if not hold_verified(hand_hold):
+                    raise RuntimeError("재부팅한 손의 위치 유지에 실패했습니다")
+            after = {str(j): v for j, v in adapter.read_joint_positions().items()}
+            if set(arm) - set(after):
+                raise RuntimeError("복구 후 일부 관절의 응답이 없습니다")
+            report.update(present=_display_pose(after), held=True, success=True)
+            _read_cache.update(value={}, at=0.0)
         except Exception as exc:
+            report["hold_error"] = str(exc)
             report["error"] = str(exc)
-    try:
-        present = adapter.read_joint_positions()      # 로봇 단위 그대로
-        arm = {j: v for j, v in present.items() if j in _arm_joint_ids()}
-        if arm:
-            adapter.move_joints(arm, velocity=safety.DEFAULT_VELOCITY, acceleration=20,
-                                label="recover_hold", bypass_temperature_check=True)
-        report["present"] = _display_pose(present)
-        report["held"] = bool(arm)
-    except Exception as exc:
-        report["hold_error"] = str(exc)
-    state.note("오류 복구 시도" + (" — 실패" if report.get("hold_error") else " — 그 자리에 세움"))
-    _refresh_attestation()          # 복구 뒤에는 무엇이 돌아왔는지 다시 본다
+    state.note("오류 복구 시도" + (" — 그 자리에 세움" if report["success"] else " — 실패"))
+    _refresh_attestation()
     return report
 
 
@@ -893,7 +910,10 @@ def attest_parts_now() -> dict:
 @app.post("/api/estop")
 def estop(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     """정지는 어떤 상태에서도 받는다. 안전 판정을 기다리지 않는다."""
-    state.latch_estop(str(payload.get("reason") or "운영자 요청"))
+    global _stop_epoch
+    with _JOB_LOCK:
+        _stop_epoch += 1
+        state.latch_estop(str(payload.get("reason") or "운영자 요청"))
     stopped = False
     try:
         stopped = _stop_hardware()
@@ -902,26 +922,61 @@ def estop(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     return {"success": True, "stopped_hardware": stopped, **state.to_dict()}
 
 
+def _confirmed_recovery(payload: dict[str, Any], *, clear_estop: bool) -> dict:
+    operator = str(payload.get("operator") or "")
+    if not operator or payload.get("confirmed") is not True:
+        return {"success": False, "ready": False, "error": "운영자의 명시적 복구 확인이 필요합니다"}
+    if not clear_estop and (state.estop_latched or state.away_mode):
+        return {"success": False, "ready": False, "readiness": "needs_operator",
+                "error": "비상 정지 또는 부재 모드가 유지됩니다. 현장 확인 후 해제하세요", **state.to_dict()}
+    try:
+        with _exclusive("recovery"):
+            # Keep the original latch set until every recovery check has passed.
+            epoch = _stop_epoch
+            if CONFIG.get("adapter") is None:
+                simulated = bool(CONFIG.get("simulation_requested") or CONFIG["descriptor"].get("simulated"))
+                if clear_estop and simulated:
+                    state.clear_estop(operator)
+                    state.disconnect_latched = False
+                    state.disconnect_reason = ""
+                    state.paused = False
+                return {"success": bool(clear_estop and simulated), "ready": False,
+                        "readiness": "simulated" if simulated else "disconnected",
+                        "error": "실물 연결이 없어 복구를 검증하지 못했습니다", **state.to_dict()}
+            recovery = _recover_hardware(may_reopen_link=True)
+            with _JOB_LOCK:
+                ok = recovery.get("success") is True and epoch == _stop_epoch
+                if ok:
+                    if clear_estop:
+                        state.clear_estop(operator)
+                    state.disconnect_latched = False
+                    state.disconnect_reason = ""
+                    state.paused = False
+                    _recovery["failed_in_a_row"] = 0
+                else:
+                    reason = recovery.get("hold_error") or "복구 중 새 긴급 정지가 요청되었습니다"
+                    state.latch_disconnect(reason)
+            if epoch != _stop_epoch:
+                _stop_hardware()
+            ready = ok and not state.blocking_summary()
+            return {"success": ok, "ready": ready,
+                    "readiness": "ready" if ready else "needs_operator" if ok else "fault_remaining",
+                    "message": "복구를 확인했습니다" if ok else "복구하지 못했습니다. 동작은 차단됩니다",
+                    "error": "" if ok else state.disconnect_reason,
+                    "effective_device": CONFIG["device"], "disconnect_recovery": recovery, **state.to_dict()}
+    except _Busy as exc:
+        return {**_busy_answer(exc.name), "ready": False, "readiness": "busy"}
+
+
 @app.post("/api/estop-reset")
 def estop_reset(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
-    operator = str(payload.get("operator") or "")
-    if not operator:
-        return {"success": False, "error": "누가 확인했는지 남겨야 해제할 수 있습니다"}
-    if not payload.get("confirmed"):
-        return {"success": False, "error": "confirmed=false: 긴급 정지 해제에는 명시적 확인이 필요합니다."}
-    state.clear_estop(operator)
-    _recovery["failed_in_a_row"] = 0        # 사람이 확인했으니 다시 시도할 기회를 준다
-    # 서보 오류 래치까지 풀어야 실제로 다시 움직인다. 상태 표시만 바꾸지 않는다.
-    # 사람이 확인하고 누른 해제다 — 여기서는 연결 다시 열기까지 허락한다.
-    recovery = _recover_hardware(may_reopen_link=True)
-    state.disconnect_latched = False
-    state.disconnect_reason = ""
-    ok = not recovery.get("hold_error")
-    return {"success": ok, "message": ("🚨 긴급 정지가 해제되었습니다."
-                                       if ok else "정지는 풀었으나 로봇이 아직 응답하지 않습니다."),
-            "error": recovery.get("hold_error", ""),
-            "effective_device": CONFIG["device"], "disconnect_latched": False,
-            "disconnect_recovery": recovery, **state.to_dict()}
+    return _confirmed_recovery(payload, clear_estop=True)
+
+
+@app.post("/api/recover-after-restart")
+def recover_after_restart(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    """Explicit launcher reset: recover hardware, retaining operator safety stops."""
+    return _confirmed_recovery(payload, clear_estop=False)
 
 
 @app.post("/api/pause-hold")
@@ -1406,19 +1461,7 @@ def save_safety_limits(payload: dict[str, Any] = Body(default_factory=dict)) -> 
 
 @app.post("/api/recover-robot-usb")
 def recover_robot_usb(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
-    """장치가 빠졌다 돌아왔을 때 다시 연다. 읽기만으로 확인한다."""
-    adapter = CONFIG.get("adapter")
-    if adapter is None:
-        return {"success": False, "error": "시늉 모드에서는 복구할 것이 없습니다"}
-    detail = _recover_hardware(may_reopen_link=True)   # 사람이 누른 복구다
-    if detail.get("hold_error"):
-        return {"success": False, "error": detail["hold_error"],
-                "effective_device": CONFIG["device"], "detail": detail}
-    state.disconnect_latched = False
-    state.disconnect_reason = ""
-    state.note("장치 복구 확인")
-    return {"success": True, "effective_device": CONFIG["device"],
-            "detail": detail, "present": detail.get("present", {})}
+    return _confirmed_recovery(payload, clear_estop=False)
 
 
 # ── 세우기 ──────────────────────────────────────────────────────
@@ -1518,6 +1561,7 @@ def build(module_id: str, device: str, limits_path: str = "", *,
           eye: str = "", eye_device: str = "", state_path: str = "",
           usage_path: str = "") -> None:
     """런타임을 이 부품에 맞게 세운다. 실물이 없으면 시늉 모드로 뜬다."""
+    CONFIG["simulation_requested"] = bool(simulate)
     _read_cache.update({"at": 0.0, "value": {}})   # 다른 로봇의 값을 물려받지 않는다
     _TRACKING["session"] = None
     root = Path(__file__).resolve().parents[3]

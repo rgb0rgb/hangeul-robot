@@ -154,7 +154,7 @@ def test_console_restart_hands_off_to_the_launcher(client, monkeypatch):
     launched = {}
     monkeypatch.setattr(subprocess, "Popen",
                         lambda args, **kw: launched.update(args=args, kw=kw) or object())
-    answer = client.post("/api/server-restart", json={}).json()
+    answer = client.post("/api/server-restart", json={"confirmed": True}).json()
     assert answer["success"], answer
     assert launched["args"][1:3] == [str(app_mod.LAUNCHER), "reset"]
     # 부모(콘솔)를 끄는 일이므로 떨어져 나간 자식이어야 한다
@@ -178,3 +178,54 @@ def test_adding_a_robot_starts_its_runtime(client, monkeypatch, tmp_path):
     assert answer["success"], answer
     assert called == [True]
     client.delete(f"/api/robots/{answer['robot_id']}")
+
+
+def test_serial_open_failure_is_not_ready(launcher, monkeypatch):
+    _arm(launcher, "arm_omx")
+    monkeypatch.setattr(launcher, "_get", lambda *a, **kw: None)
+    monkeypatch.setattr(launcher, "find_device", lambda d: "/dev/fake")
+    monkeypatch.setattr(launcher, "_spawn", lambda *a, **kw: 0)
+    monkeypatch.setattr(launcher, "_wait_json", lambda *a: {"simulated": True, "simulate_reason": "open failed"})
+    row = launcher.start_runtime({"port": 8601, "module": "arm_omx", "robots": ["a"]})
+    assert row["state"] == "started" and row["readiness"] == "disconnected" and not row["ready"]
+    assert not launcher.recover_runtime(row)["ready"]
+
+
+def test_reset_calls_hardware_recovery_and_reports_failed_readiness(launcher, monkeypatch):
+    import io
+    calls = []
+    def response(request, timeout):
+        calls.append((request.full_url, json.loads(request.data)))
+        return io.BytesIO(json.dumps({"success": False, "ready": False, "readiness": "fault_remaining", "error": "J12 error 32"}).encode())
+    monkeypatch.setattr(launcher.urllib.request, "urlopen", response)
+    row = launcher.recover_runtime({"port": 8601, "state": "started", "readiness": "not_checked", "message": "connected"})
+    assert calls[0][0].endswith('/api/recover-after-restart') and calls[0][1]["confirmed"]
+    assert not row["ready"] and row["readiness"] == "fault_remaining"
+    assert "J12" in row["message"]
+
+
+def test_reset_report_separates_process_start_and_hardware_ready(launcher, monkeypatch):
+    monkeypatch.setattr(launcher, "stop_all", lambda: [])
+    monkeypatch.setattr(launcher, "plan", lambda: ([{}], []))
+    monkeypatch.setattr(launcher, "start_runtime", lambda g: {"state": "started", "ready": False})
+    monkeypatch.setattr(launcher, "recover_runtime", lambda r: r)
+    monkeypatch.setattr(launcher, "start_console", lambda: {"state": "started"})
+    report = launcher.up("reset")
+    assert report["processes_started"] and not report["robots_ready"] and not report["ok"]
+
+
+def test_start_and_ensure_never_reboot_motors(launcher, monkeypatch):
+    monkeypatch.setattr(launcher, "plan", lambda: ([{}], []))
+    monkeypatch.setattr(launcher, "start_runtime", lambda g: {"state": "started", "ready": False})
+    monkeypatch.setattr(launcher, "start_console", lambda: {"state": "started"})
+    def forbidden(row):
+        raise AssertionError("start/ensure must not reboot hardware")
+    monkeypatch.setattr(launcher, "recover_runtime", forbidden)
+    assert launcher.up("start")["ok"]
+    assert launcher.up("ensure")["ok"]
+
+
+def test_restart_requires_confirmation(client, monkeypatch):
+    import subprocess
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: pytest.fail("must not launch"))
+    assert not client.post("/api/server-restart", json={}).json()["success"]

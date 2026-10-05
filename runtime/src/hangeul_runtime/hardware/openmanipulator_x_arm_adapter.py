@@ -601,6 +601,9 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
         final = dict(before)
         position_history: dict[int, list[int]] = {dxl_id: [] for dxl_id in clamped}
         overcurrent_counts = {dxl_id: 0 for dxl_id in clamped}
+        # 동작 중 관절별 최대 전류. 한계값을 감이 아니라 실측으로 정하려면
+        # 정상 동작이 실제로 얼마를 쓰는지 남아 있어야 한다.
+        peak_currents: dict[int, int] = {}
         deadline = time.time() + 12
         while time.time() < deadline:
             settled = True
@@ -628,6 +631,8 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
                     dxl_id, current, overcurrent_counts.get(dxl_id, 0), self.current_limits
                 )
                 overcurrent_counts[dxl_id] = next_count
+                if current is not None:
+                    peak_currents[dxl_id] = max(peak_currents.get(dxl_id, 0), abs(int(current)))
                 if current is not None and blocked_current:
                     raise InFlightSafetyViolationError(f"J{dxl_id} 전류 {abs(int(current))}가 한계 {reported_limit} 초과")
 
@@ -659,6 +664,7 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
             "final": final,
             "sent": comm == COMM_SUCCESS,
             "settled": settled,
+            "peak_currents": {str(k): v for k, v in peak_currents.items()},
         }
 
     def gripper_write_reg(self, addr: int, length: int, value: int) -> bool:

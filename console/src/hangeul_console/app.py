@@ -1020,15 +1020,24 @@ def estop(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
             repeat_work.control(instance.instance_id, "cancel")
         except ValueError:
             pass
-    results = [{"robot_id": i.instance_id, **runtime.stop(i)} for i in targets]
-    failed = [r for r in results if not r.get("stopped")]
-    _log(f"긴급정지 요청: {len(results)}대", "s-log-err")
+    results = [{"robot_id": i.instance_id, "robot_label": i.display_name, **runtime.stop(i)}
+               for i in targets]
+    # 런타임이 떠 있지 않은 로봇(목록에만 있고 대기 중)은 움직일 수단이 없으니
+    # 못 멈춘 것이 아니다. 다만 absent는 runtime_link가 '연결 거부'를 확답할 때만
+    # 참이 되는데, 그 판별은 아직 없다 — 지금은 대기 로봇도 '응답 없음'으로 센다.
+    # 이름은 내부 ID 대신 화면 이름을 쓴다(2026-10-05: "robot_6"이 누군지 몰랐다).
+    absent = [r for r in results if not r.get("stopped") and r.get("absent")]
+    failed = [r for r in results if not r.get("stopped") and not r.get("absent")]
+    _log(f"긴급정지 요청: {len(results) - len(absent)}대", "s-log-err")
+    if absent:
+        _log(f"대기 중(런타임 없음)이라 건너뜀: "
+             + ", ".join(r["robot_label"] for r in absent), "s-log-info")
     # 한 대라도 못 멈췄으면 그대로 말한다. 조용히 성공이라고 하면 사람은
     # 멈춘 줄 알고 작업 공간에 들어간다.
     return {"success": True, "results": results, "error": "",
             "warning": ("" if not failed else
                         f"{len(failed)}대가 멈춤에 응답하지 않았습니다: "
-                        + ", ".join(r["robot_id"] for r in failed))}
+                        + ", ".join(r["robot_label"] for r in failed))}
 
 
 @app.post("/api/jog")
@@ -2189,13 +2198,14 @@ def server_restart(payload: dict[str, Any] = Body(default_factory=dict)) -> dict
     그 기능이 아예 없는 상태가 되고, 눌러도 아무 일도 안 일어난다(2026-08-21에
     목표물 추적이 정확히 그랬다).
 
-    팔에는 아무 명령도 보내지 않는다. 포트를 닫는 것뿐이고, 서보는 자기 토크
-    상태를 그대로 들고 있다. 다만 컨트롤러가 시리얼 열림에 리셋되는 팔
-    (MyCobot 계열의 M5)은 다시 열릴 때 리셋될 수 있으므로 응답에 적어 보낸다.
+    명시적으로 확인한 재시작은 연결 재탐색 뒤 모터 복구와 현재 위치 유지를
+    검증한다. 비상 정지와 부재 모드는 자동 해제하지 않는다.
     """
     import subprocess
     import sys
 
+    if payload.get("confirmed") is not True:
+        return {"ok": False, "success": False, "error": "모터 복구 전 현장 확인이 필요합니다"}
     # 끄고 다시 띄우는 일은 **실행기**(tools/launcher.py reset)가 한다. Reset.bat ·
     # run.sh 와 같은 길이다. 전에는 여기서 bash+pkill 로 끄고 run.sh 를 불렀는데
     # (1) 윈도우에는 bash 가 없고 (2) 공개판 run.sh 는 콘솔만 띄워 **재시작을 누르면
@@ -2225,14 +2235,14 @@ def server_restart(payload: dict[str, Any] = Body(default_factory=dict)) -> dict
          + ("과 로봇 런타임을" if with_runtimes else "만") + " 다시 시작합니다", "s-log-err")
     return {"ok": True, "success": True, "manual": False,
             "restart_runtimes": with_runtimes,
-            "message": "다시 시작합니다. 5~10초 뒤 브라우저를 새로고침하세요",
+            "message": "재시작 후 모터 복구 결과를 확인합니다. 결과가 표시될 때까지 기다려 주세요",
             # 어느 팔이 시리얼 열림에 스스로 초기화되는지는 **이 저장소가 실측으로
             # 아는 바가 없다.** 그러니 특정 팔을 지목하지 않는다 — 사람이 팔을
             # 낮은 자세에 두게 하는 것으로 충분하고, 지목하려면 부품 기술서가
             # 그 성질을 밝히고 나서야 한다.
-            "note": ("로봇 런타임도 함께 다시 시작합니다. 팔에는 아무 명령도 보내지 "
-                     "않지만, 시리얼이 다시 열릴 때 컨트롤러가 스스로 초기화되는 팔이 "
-                     "있습니다. 팔을 낮은 자세에 두고 누르세요" if with_runtimes else
+            "note": ("모터 오류 복구와 현재 위치 유지 명령을 보냅니다. 재부팅 중 토크가 "
+                     "풀릴 수 있으므로 팔을 낮추거나 지지하세요. 비상 정지·부재 모드와 "
+                     "이전 작업의 정지 상태는 유지합니다" if with_runtimes else
                      "로봇 런타임은 그대로 둡니다 — 런타임 코드를 고쳤다면 그것도 "
                      "다시 시작해야 합니다"),
             "python": sys.executable}

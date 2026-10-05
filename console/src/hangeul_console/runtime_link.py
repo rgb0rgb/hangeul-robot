@@ -238,5 +238,8 @@ class RuntimeLink:
         result = self._call(instance, "/api/estop", {"operator": "console"},
                             timeout=STOP_TIMEOUT_SEC, method="POST")
         if not result["ok"]:
-            return {"stopped": False, "reason": result.get("reason")}
+            # 런타임이 없으면 그 로봇을 움직이는 것도 없다 — 못 멈춘 것과 구분한다.
+            # 늦게 답하거나 거절한 것은 여전히 '못 멈춤'이다.
+            return {"stopped": False, "absent": bool(result.get("refused")),
+                    "reason": result.get("reason")}
         return {"stopped": True, "detail": result["data"]}
