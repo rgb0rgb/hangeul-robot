@@ -1664,7 +1664,7 @@ def pause_hold(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
                 _PAUSE_HELD_REPEATS.add(i.instance_id)
             except ValueError:
                 pass
-    results = [{"robot_id": i.instance_id,
+    results = [{"robot_id": i.instance_id, "robot_label": i.display_name,
                 **runtime.forward(i, "/api/pause-hold", {**payload, "paused": paused})}
                for i in targets]
     if not paused:
@@ -1675,13 +1675,19 @@ def pause_hold(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
                     repeat_work.control(i.instance_id, "resume")
                 except ValueError:
                     pass
-    failed = [r for r in results if r.get("success") is False]
+    # 긴급정지와 같은 기준: 런타임이 없는 대기 로봇은 '응답 없음'이 아니다
+    # (2026-10-19: OMX만 쓰는데 robot_6, young_mycobot이 응답 없다고 떴다).
+    absent = [r for r in results if r.get("success") is False and r.get("absent")]
+    failed = [r for r in results if r.get("success") is False and not r.get("absent")]
     word = "일시정지" if paused else "일시정지 해제"
-    _log(f"{word} 요청: {len(results)}대", "s-log-err" if paused else "s-log-ok")
+    _log(f"{word} 요청: {len(results) - len(absent)}대", "s-log-err" if paused else "s-log-ok")
+    if absent:
+        _log(f"대기 중(런타임 없음)이라 건너뜀: "
+             + ", ".join(r["robot_label"] for r in absent), "s-log-info")
     return {"success": True, "results": results, "error": "",
             "warning": ("" if not failed else
                         f"{len(failed)}대가 {word}에 응답하지 않았습니다: "
-                        + ", ".join(r["robot_id"] for r in failed))}
+                        + ", ".join(r["robot_label"] for r in failed))}
 
 
 @app.post("/api/save-safety-limits")

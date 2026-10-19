@@ -1,3 +1,15 @@
+# 0.4.3 — Pause no longer trips a false disconnect (2026-10-19)
+
+- Pausing during a move could latch the robot as disconnected with
+  `comm=-1000` (Dynamixel `COMM_PORT_BUSY`). The stop path wrote to the serial port
+  without the lock while the running move was still polling the same port.
+  Now the stop asks the running move to step aside (it ends as `CANCELED`, which
+  Resume re-sends), takes the serial port and holds the arm in place. A stop still
+  never waits more than 1 second: if the port is not released, it holds without the lock.
+- Pause and Resume no longer report standby robots (no runtime running) as
+  "did not respond", the same rule as emergency stop in 0.4.1. Warnings use display names.
+- Confirmed on the physical OMX by the operator.
+
 # 0.4.2 — Resume after pause actually resumes (2026-10-19)
 
 - Pressing Resume after Pause now continues the run. Before, nothing ever told the runtime

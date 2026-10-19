@@ -186,6 +186,11 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
         self.port: Any | None = None
         self.packet: Any | None = None
         self.audit: list[LimitedWriteAuditEntry] = []
+        # 멈춤이 진행 중인 이동에게 "그만 읽고 비켜라"를 알리는 번호.
+        # 이동은 시작할 때 번호를 기억하고, 바뀌면 그 자리에서 손을 뗀다.
+        # 전에는 멈춤이 이 감시 루프와 같은 시리얼을 동시에 썼고, SDK의
+        # '사용 중' 표시가 엉켜 comm=-1000으로 연결 끊김이 걸렸다(2026-10-19).
+        self._halt_gen = 0
 
     @classmethod
     def from_resolved(cls, profile: dict[str, Any], instance: dict[str, Any]) -> "OpenManipulatorXArmAdapter":
@@ -202,6 +207,17 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
         entry = LimitedWriteAuditEntry(sdk_call=sdk_call, dxl_id=dxl_id, address=address, value=value)
         self.audit.append(entry)
         return entry
+
+    def request_halt(self) -> None:
+        """진행 중인 이동의 감시를 끝내게 한다. 이미 보낸 목표는 되돌리지 않는다 —
+        그 자리에 세우는 일은 부른 쪽(정지)이 시리얼을 넘겨받은 뒤에 한다."""
+        self._halt_gen += 1
+
+    def _halted_result(self, label: str, targets: dict[int, int], before: dict[int, Any],
+                       final: dict[int, Any], comm: int) -> dict[str, Any]:
+        return {"success": False, "canceled": True, "settled": False, "label": label,
+                "targets": targets, "initial": before, "final": final,
+                "sent": comm == COMM_SUCCESS, "error": "멈춤 요청으로 이동 감시를 끝냈습니다"}
 
     # ── 연결 ────────────────────────────────────────────────────
     # 포트 상호배제는 robot_session.open_robot()이 device_lock_key로 소유한다
@@ -545,6 +561,7 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
         그대로 유지된다. 일반 동작 호출은 이 플래그를 절대 넘기지 않는다.
         """
         self._require_open()
+        halt_gen = self._halt_gen
         int_targets = {int(name): val for name, val in targets.items()}
         temperature_limits_c = (
             {int(name): val for name, val in temperature_limits_c.items()}
@@ -608,6 +625,8 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
         while time.time() < deadline:
             settled = True
             for dxl_id, target in clamped.items():
+                if self._halt_gen != halt_gen:
+                    return self._halted_result(label, clamped, before, final, comm)
                 pos = self._read_present_position_plausible(dxl_id)
                 moving = self.read_reg(dxl_id, ADDR_MOVING, 1)
                 final[dxl_id] = pos
@@ -706,6 +725,7 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
         스톱에 닿아도 재시도하지 않고 즉시 종료한다(그리퍼는 팔과 달리 접촉이
         정상 동작의 일부다)."""
         self._require_open()
+        halt_gen = self._halt_gen
         clamped = max(GRIPPER_HW_TICKS_MIN_SAFETY, min(GRIPPER_HW_TICKS_MAX_SAFETY, int(target)))
         position_clamped = clamped != int(target)
 
@@ -723,8 +743,12 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
         final_current = before_current
         stall_detected = False
         settled = False
+        halted = False
 
         while time.time() < deadline:
+            if self._halt_gen != halt_gen:
+                halted = True
+                break
             pos = self.read_reg(GRIPPER_ID, ADDR_PRESENT_POSITION, 4, signed=True)
             moving = self.read_reg(GRIPPER_ID, ADDR_MOVING, 1)
             current = self._read_plausible(GRIPPER_ID, ADDR_PRESENT_CURRENT, 2, signed=True, implausible_abs_max=IMPLAUSIBLE_CURRENT_RAW)
@@ -757,7 +781,7 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
                 break
             time.sleep(0.1)
 
-        if not stall_detected and not settled:
+        if not stall_detected and not settled and not halted:
             pos = self.read_reg(GRIPPER_ID, ADDR_PRESENT_POSITION, 4, signed=True)
             if pos is not None:
                 final_pos = pos
@@ -765,6 +789,7 @@ class OpenManipulatorXArmAdapter(RobotArmAdapter):
 
         return {
             "success": settled or stall_detected,
+            "canceled": halted,
             "label": label,
             "target_ticks": clamped,
             "requested_ticks": int(target),

@@ -64,3 +64,25 @@ def test_only_a_refused_connection_means_nobody_is_there():
                       "/api/estop", {}, timeout=0.5, method="POST")
     release.set(); silent.close()
     assert slow["ok"] is False and slow["refused"] is False
+
+
+# 2026-10-19: 일시정지/해제에도 같은 일이 있었다 — "2대가 일시정지 해제에 응답하지 않았습니다"
+def test_pause_and_release_do_not_count_a_robot_without_a_runtime_as_failed(client, monkeypatch):
+    from hangeul_console import app as app_mod
+    _robots(app_mod, monkeypatch)
+    monkeypatch.setattr(app_mod.runtime, "forward", lambda i, path, payload, method="POST": (
+        {"success": True} if i.instance_id == "omx"
+        else {"success": False, "verdict": "RUNTIME_UNREACHABLE", "absent": True}))
+    for paused in (True, False):
+        answer = client.post("/api/pause-hold", json={"paused": paused}).json()
+        assert answer["warning"] == "", answer["warning"]
+
+
+def test_pause_release_still_warns_by_display_name_when_a_live_runtime_fails(client, monkeypatch):
+    from hangeul_console import app as app_mod
+    _robots(app_mod, monkeypatch)
+    monkeypatch.setattr(app_mod.runtime, "forward", lambda i, path, payload, method="POST": (
+        {"success": True} if i.instance_id == "omx"
+        else {"success": False, "verdict": "RUNTIME_UNREACHABLE", "absent": False}))
+    answer = client.post("/api/pause-hold", json={"paused": False}).json()
+    assert answer["warning"] == "1대가 일시정지 해제에 응답하지 않았습니다: 로봇2", answer["warning"]

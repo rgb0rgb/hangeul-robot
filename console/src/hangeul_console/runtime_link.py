@@ -233,7 +233,9 @@ class RuntimeLink:
                         "error": blocked.get("error") or blocked.get("reason")
                         or blocked.get("blocked_reasons") or result.get("reason")}
             reason = result.get("reason") or "런타임 응답이 없습니다"
+            # absent: 연결 거부 — 그 로봇은 런타임 없이 대기 중이다(stop과 같은 기준).
             return {"success": False, "verdict": "RUNTIME_UNREACHABLE",
+                    "absent": bool(result.get("refused")),
                     "reason": reason, "error": reason}
         return result["data"]
 

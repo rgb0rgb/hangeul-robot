@@ -47,6 +47,9 @@ SERIAL_LOCK = threading.RLock()
 # **정지 계열은 이 문을 쓰지 않는다.** 멈추는 일이 무언가 끝나기를 기다리면
 # 그것은 멈춤이 아니다.
 _JOB: dict[str, Any] = {"name": "", "since": 0.0}
+# 멈춤이 진행 중인 이동에게서 시리얼을 넘겨받기까지 기다리는 최대 시간.
+# 이동의 감시 루프는 레지스터 하나 읽을 때마다 비킬지 보므로 보통 수십 ms다.
+STOP_LOCK_WAIT_SEC = 1.0
 _JOB_LOCK = threading.Lock()
 _stop_epoch = 0
 
@@ -549,6 +552,18 @@ def _stop_hardware() -> bool:
     # 자체 정지 명령이 있어도 **그 자리에 세우는 일은 건너뛰지 않는다.**
     # 전에는 stop()만 부르고 돌아섰는데, 컨트롤러의 정지는 토크를 보장하지
     # 않는다 — 멈춤을 눌렀는데 팔이 처지는 일이 실제로 있었다.
+    #
+    # 진행 중인 이동은 SERIAL_LOCK을 쥔 채 도착을 감시한다. 그 옆에서 잠금 없이
+    # 시리얼을 쓰면 두 대화가 엉켜 comm=-1000(포트 사용 중)이 나고, 이동 쪽이
+    # 이를 연결 끊김으로 걸었다(2026-10-19 일시정지 때 두 번). 그래서 먼저
+    # 이동에게 비키라고 알리고, 시리얼을 넘겨받아 세운다. 이동이 끝내 비키지
+    # 않아도 멈춤은 기다리지 않는다 — 그때는 예전처럼 잠금 없이 세운다.
+    halt = getattr(adapter, "request_halt", None)
+    if callable(halt):
+        halt()
+    locked = SERIAL_LOCK.acquire(timeout=STOP_LOCK_WAIT_SEC)
+    if not locked:
+        state.note("진행 중인 이동이 시리얼을 놓지 않아 기다리지 않고 세웁니다", "stop")
     try:
         present = adapter.read_joint_positions()      # 로봇 단위 그대로
         arm = {j: v for j, v in present.items() if j in _arm_joint_ids()}
@@ -557,6 +572,9 @@ def _stop_hardware() -> bool:
                                 label="estop_freeze", bypass_temperature_check=True)
     except Exception as exc:                # noqa: BLE001 — 멈춤은 실패해도 계속 간다
         state.note(f"멈춤 뒤 그 자리에 세우지 못했습니다: {exc}", "stop")
+    finally:
+        if locked:
+            SERIAL_LOCK.release()
     return True
 
 
