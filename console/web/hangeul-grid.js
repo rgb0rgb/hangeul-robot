@@ -879,6 +879,9 @@
   }
 
   function toggleMultiPause() {
+    // 다중 실행이 없으면 단일 실행 쪽(simple.js) 일시정지만 동작한다 —
+    // 여기서 "진행 중인 다중 실행이 없습니다"를 빨갛게 띄우면 실패로 읽힌다.
+    if (!multiPaused && !anyMultiRunActive) return;
     if (multiPaused) {
       fetch('/api/hangeul/multi-resume', { method: 'POST' })
         .then(function (response) { return response.json(); })

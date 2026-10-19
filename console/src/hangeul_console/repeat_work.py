@@ -94,14 +94,21 @@ class RepeatWork:
         try:
             for cycle in range(1, job["count"] + 1):
                 for index, phase in enumerate(("A", "B")):
-                    if not self._wait(job):
-                        return
-                    with self.cv:
-                        job.update(cycle=cycle, phase=phase)
-                    answer = move(job["id"], job["joint_id"], job["targets"][index])
-                    with self.cv:
-                        if job["state"] == "canceling":
+                    while True:
+                        if not self._wait(job):
                             return
+                        with self.cv:
+                            job.update(cycle=cycle, phase=phase)
+                        answer = move(job["id"], job["joint_id"], job["targets"][index])
+                        with self.cv:
+                            if job["state"] == "canceling":
+                                return
+                            # 일시정지가 이동 도중에 걸려 그 이동이 끊겼다 — 실패가
+                            # 아니다. 재개되면 같은 위치로 다시 보낸다.
+                            interrupted = (answer.get("success") is not True
+                                           and job["state"] in ("pausing", "paused"))
+                        if not interrupted:
+                            break
                     if answer.get("success") is not True:
                         raise RuntimeError(answer.get("error") or "; ".join(answer.get("blocked_reasons") or [])
                                            or answer.get("verdict") or "이동 실패")

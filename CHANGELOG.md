@@ -1,3 +1,16 @@
+# 0.4.2 — Resume after pause actually resumes (2026-10-19)
+
+- Pressing Resume after Pause now continues the run. Before, nothing ever told the runtime
+  to leave the paused state, and a running repeat motion counted the move the pause had
+  refused as a failure, ending the run with `BLOCKED_REPEAT_FAILED`.
+- Pause now holds the running repeat first; Resume releases the runtime, then continues the
+  repeat. Only repeats held by the Pause button are resumed — a repeat paused from its own
+  panel stays paused.
+- A move cut off by the pause is not a failure: Resume sends the same move again.
+- Resuming a multi-run also releases the runtime pause.
+- No red "No multi-run in progress" message when only a single run is paused.
+- Software validation only; not yet re-run on the physical arm.
+
 # 0.4.1 — Emergency stop no longer blames robots on standby (2026-10-05)
 
 - A robot whose runtime is not running (connection refused) is logged as skipped, not as

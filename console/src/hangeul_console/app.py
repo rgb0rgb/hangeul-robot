@@ -1640,17 +1640,47 @@ def estop_reset(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
                      + ", ".join(r.get("robot_label") or r["robot_id"] for r in failed)}
 
 
+# 일시정지 버튼이 세운 반복 작업. 재개 때 이것만 다시 돌린다 —
+# 반복 패널에서 사람이 따로 멈춘 것을 대신 풀지 않는다.
+_PAUSE_HELD_REPEATS: set[str] = set()
+
+
 @app.post("/api/pause-hold")
 def pause_hold(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    """일시정지와 그 해제(paused=false). 둘 다 같은 문으로 다닌다.
+
+    전에는 해제 요청을 보내는 곳이 없어 런타임이 '일시정지' 상태로 남았고,
+    도는 중이던 반복 작업은 다음 이동이 거부되자 '실패'로 끝났다
+    (BLOCKED_REPEAT_FAILED) — 계속 진행을 눌러도 이어갈 것이 없었다.
+    그래서 반복 작업을 먼저 세우고, 해제할 때는 런타임을 먼저 푼 뒤 잇는다.
+    """
     targets = ([registry.get(payload["robot_id"])] if payload.get("robot_id")
                else registry.all())
-    results = [{"robot_id": i.instance_id, **runtime.forward(i, "/api/pause-hold", payload)}
+    paused = payload.get("paused", True) is not False
+    if paused:
+        for i in targets:
+            try:
+                repeat_work.control(i.instance_id, "pause")
+                _PAUSE_HELD_REPEATS.add(i.instance_id)
+            except ValueError:
+                pass
+    results = [{"robot_id": i.instance_id,
+                **runtime.forward(i, "/api/pause-hold", {**payload, "paused": paused})}
                for i in targets]
+    if not paused:
+        for i in targets:
+            if i.instance_id in _PAUSE_HELD_REPEATS:
+                _PAUSE_HELD_REPEATS.discard(i.instance_id)
+                try:
+                    repeat_work.control(i.instance_id, "resume")
+                except ValueError:
+                    pass
     failed = [r for r in results if r.get("success") is False]
-    _log(f"일시정지 요청: {len(results)}대", "s-log-err")
+    word = "일시정지" if paused else "일시정지 해제"
+    _log(f"{word} 요청: {len(results)}대", "s-log-err" if paused else "s-log-ok")
     return {"success": True, "results": results, "error": "",
             "warning": ("" if not failed else
-                        f"{len(failed)}대가 일시정지에 응답하지 않았습니다: "
+                        f"{len(failed)}대가 {word}에 응답하지 않았습니다: "
                         + ", ".join(r["robot_id"] for r in failed))}
 
 
@@ -2036,6 +2066,8 @@ def multi_resume(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
     if _console().get("away_mode"):
         return {"success": False, "error": "부재 모드에서는 재개하지 않습니다"}
     for instance in registry.all():
+        # 런타임의 일시정지를 풀지 않으면 다음 이동이 전부 "일시정지 상태"로 막힌다
+        runtime.forward(instance, "/api/pause-hold", {"paused": False})
         _store(instance.instance_id).update_runtime(multi_run={"state": "running"})
         _signal_sequence(instance.instance_id, "resume")
     _log("다중 실행 재개", "s-log-ok")

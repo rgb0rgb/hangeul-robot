@@ -2794,7 +2794,19 @@ function togglePause() {
     slog(lang === 'ko' ? '일시 정지 해제 — 작업을 이어서 진행합니다.' : 'Pause released — resuming task.', 's-log-ok');
     var resume = state.resumeExecution;
     state.resumeExecution = null;
-    if (resume) resume();
+    // 로봇 쪽 일시정지를 먼저 푼다. 전에는 이 요청이 없어 로봇이 계속
+    // '일시정지 상태'로 남았고, 이어서 보낸 동작이 전부 차단됐다.
+    fetch(BACKEND + '/api/pause-hold', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paused: false })
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { if (d.warning) slog(d.warning, 's-log-err'); })
+      .catch(function(err) {
+        slog((lang === 'ko' ? '일시 정지 해제 요청 실패: ' : 'Pause release request failed: ') + err.message, 's-log-err');
+      })
+      .then(function() { if (resume && state.running) resume(); });
     return;
   }
 
@@ -3017,7 +3029,20 @@ function doExecute() {
 
       var ok = d.verdict && (d.verdict === 'ACTUAL_MOTION_EXECUTED_ONCE' || d.verdict === 'REPEAT_COMPLETED' || d.verdict === 'PREFLIGHT_READY_NO_MOTION_EXECUTED');
       var blocked = d.verdict && d.verdict.indexOf('BLOCKED') !== -1;
-      
+
+      // 일시정지가 이 동작 도중에 걸려 끊긴 것은 실패가 아니다.
+      // 계속 진행을 누르면 같은 동작부터 다시 한다.
+      if (!ok && state.paused) {
+        if (rowEl) rowEl.classList.remove('s-executing');
+        if (statEl) statEl.textContent = lang === 'ko' ? '일시 정지됨' : 'Paused';
+        state.resumeExecution = runNext;
+        if (statusEl) {
+          statusEl.textContent = lang === 'ko' ? '일시 정지 중 — 계속 진행 대기' : 'Paused — waiting to resume';
+          statusEl.style.color = '#fbbf24';
+        }
+        return;
+      }
+
       if (rowEl) {
         rowEl.classList.remove('s-executing');
         rowEl.classList.add(blocked ? 's-blocked' : 's-done');

@@ -275,3 +275,60 @@ def test_multi_resume_does_not_unpause_a_panel_repeat(repeat_api, monkeypatch):
     time.sleep(0.3)
     assert a.repeat_work.status("young_omx")["state"] == "paused"
     client.post("/api/repeat-work/control", json={"robot_id": "young_omx", "action": "cancel"})
+
+
+def test_move_cut_by_pause_is_resent_after_resume_not_failed():
+    # 일시정지가 이동 도중에 걸려 런타임이 그 이동을 거절해도 실패가 아니다.
+    runner, calls, entered, release = RepeatWork(), [], threading.Event(), threading.Event()
+    def move(_, joint, target):
+        calls.append(target)
+        if len(calls) == 1:
+            entered.set()
+            release.wait(2)
+            return {"success": False, "verdict": "BLOCKED", "error": "일시정지 상태입니다"}
+        return {"success": True}
+    runner.start("r", "device", plan(count=1), move)
+    assert entered.wait(1)
+    runner.control("r", "pause")
+    release.set()
+    wait_for(lambda: runner.status("r")["state"] == "paused")
+    runner.control("r", "resume")
+    wait_for(lambda: runner.status("r")["state"] == "completed")
+    assert calls == [1300, 1300, 2000]
+
+
+def test_pause_button_then_resume_continues_a_saved_repeat(repeat_api, monkeypatch):
+    # 2026-10-19: 일시정지 → 계속 진행이 BLOCKED_REPEAT_FAILED로 끝났다.
+    # 해제 요청이 런타임에 가지 않았고, 반복은 거절된 이동을 실패로 셌다.
+    client, a, _ = repeat_api
+    skill, _ = saved_repeat(client)
+    forwarded, held, moved, gate = [], {"paused": False}, [], threading.Semaphore(0)
+    def forward(instance, path, payload=None, **kw):
+        if path == "/api/pause-hold":
+            forwarded.append(payload["paused"])
+            held["paused"] = payload["paused"]
+            return {"success": True}
+        return {"joint_tick_limits": {"12": [1000, 2200]}}
+    def run(instance, skill_id, **kwargs):
+        moved.append(kwargs["targets"])
+        gate.acquire(timeout=3)
+        if held["paused"]:
+            return {"ok": False, "verdict": "BLOCKED", "detail": {"success": False, "error": "일시정지 상태입니다"}}
+        return {"ok": True, "verdict": "DONE", "detail": {"success": True}}
+    monkeypatch.setattr(a.runtime, "forward", forward)
+    monkeypatch.setattr(a.runtime, "run", run)
+    answer = {}
+    thread = threading.Thread(target=lambda: answer.update(a._execute_pose(
+        a._instance("young_omx"), {"skill_id": skill, "safety_inputs": body()["safety_inputs"]})))
+    thread.start()
+    wait_for(lambda: len(moved) == 1)
+    client.post("/api/pause-hold", json={"robot_id": "young_omx"})
+    gate.release()                                 # 진행 중이던 이동이 일시정지로 끊긴다
+    wait_for(lambda: a.repeat_work.status("young_omx")["state"] == "paused")
+    client.post("/api/pause-hold", json={"robot_id": "young_omx", "paused": False})
+    for _ in range(10):
+        gate.release()
+    thread.join(3)
+    assert forwarded == [True, False]
+    assert answer["verdict"] == "REPEAT_COMPLETED", answer
+    assert moved[0] == moved[1] == {"12": 1300}    # 끊긴 이동을 다시 보낸다
