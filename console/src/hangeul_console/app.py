@@ -1078,6 +1078,25 @@ def _schedule_active_now(schedule: dict[str, Any]) -> bool:
     return now >= start or now < end          # 자정을 넘는 구간
 
 
+@app.get("/api/estop-status")
+def get_estop_status() -> dict:
+    """화면의 긴급 정지 버튼이 **런타임의 래치를 그대로** 보이게 한다.
+
+    래치는 파일에 남아 재시작·새로고침 뒤에도 유지된다(runtime safety.py 머리말).
+    그런데 화면은 늘 '정지 안 됨'으로 태어나서, 래치가 걸린 채 열리면 버튼이
+    '긴급 정지'로만 보였다. 실행은 막히는데 풀 버튼이 없어, 정지를 한 번 더
+    눌렀다가 해제해야만 움직였다(2026-10-20 실측).
+    """
+    latched = []
+    for instance in registry.all():
+        data = runtime.health(instance).get("runtime") or {}
+        if data.get("estop_active"):
+            latched.append({"robot_id": instance.instance_id,
+                            "robot_label": instance.display_name,
+                            "reason": data.get("estop_reason") or ""})
+    return {"success": True, "estop_active": bool(latched), "latched": latched}
+
+
 @app.get("/api/away-mode")
 def get_away_mode() -> dict:
     """화면 계약: away_mode를 최상위에 둔다."""

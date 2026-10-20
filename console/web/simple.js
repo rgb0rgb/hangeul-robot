@@ -6154,6 +6154,44 @@ function setAwayModeButtonState(isAway) {
   }
 }
 
+// ─── 긴급 정지 래치 동기화 (2026-10-20) ─────────────────────────────
+// 런타임의 래치는 재시작·새로고침 뒤에도 남는다. 화면은 늘 '정지 안 됨'으로
+// 태어나서, 래치가 걸린 채 열리면 실행은 막히는데 버튼은 '긴급 정지'로만 보였다.
+// **걸린 쪽으로만 맞춘다.** 런타임에 닿지 못해 모르는 것을 '풀림'으로 바꾸지 않는다 —
+// 푸는 것은 사람이 해제 버튼으로 한다.
+function syncEstopFromServer() {
+  fetch(BACKEND + '/api/estop-status')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d || !d.estop_active || state.estopActive) return;
+      state.estopActive = true;
+      state.running = false;
+      state.paused = false;
+      updateExecuteBtn();
+      var btn = document.getElementById('btn-estop');
+      if (btn) {
+        btn.textContent = t().estopReset;
+        btn.style.background = '#10b981';
+        btn.style.borderColor = '#059669';
+        btn.style.boxShadow = '0 0 12px rgba(16, 185, 129, 0.5)';
+      }
+      var statusEl = document.getElementById('s-exec-status');
+      if (statusEl) {
+        statusEl.textContent = lang === 'ko' ? '긴급 정지 활성화됨!' : 'E-STOP ACTIVE!';
+        statusEl.style.color = '#ef4444';
+      }
+      var who = (d.latched || []).map(function(x) {
+        return x.robot_label + (x.reason ? ' (' + x.reason + ')' : '');
+      }).join(', ');
+      slog(lang === 'ko'
+        ? '긴급 정지가 걸려 있습니다: ' + who + ' — 확인 후 해제 버튼을 누르세요.'
+        : 'Emergency stop is latched: ' + who + ' — press Reset after checking.', 's-log-err');
+    })
+    .catch(function() {});
+}
+setInterval(syncEstopFromServer, 3000);
+syncEstopFromServer();
+
 function refreshAwayModeButton() {
   fetch(BACKEND + '/api/away-mode')
     .then(function(r) { return r.json(); })

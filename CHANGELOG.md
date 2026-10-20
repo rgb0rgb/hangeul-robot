@@ -1,3 +1,14 @@
+# 0.4.4 — The screen shows a leftover emergency stop on open (2026-10-20)
+
+- The runtime keeps an emergency-stop latch across restarts (by design), but the screen always
+  started as "not stopped". Opened with a latch still set, runs were blocked while the button
+  only offered "Emergency Stop" — you had to press stop again and then reset before anything moved.
+- The console now reports runtime latches at `/api/estop-status`; the screen checks it on open and
+  every 3 seconds, switches the button to Reset and logs which robot is stopped and why.
+- It only syncs toward "stopped". An unreachable runtime is never shown as released; releasing
+  still needs the operator's Reset.
+- Software validation only; not yet re-run on the physical arm.
+
 # 0.4.3 — Pause no longer trips a false disconnect (2026-10-19)
 
 - Pausing during a move could latch the robot as disconnected with
