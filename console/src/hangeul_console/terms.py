@@ -62,6 +62,41 @@ TERMS: dict[str, dict[str, str]] = {
     "state.run.실패": {"ko": "실패", "en": "Failed"},
     "state.run.예약": {"ko": "예약", "en": "Scheduled"},
     "state.run.취소": {"ko": "취소", "en": "Cancelled"},
+    # 마지막 결과 — 로봇 목록의 '마지막:' 칸. 판정 코드(ACTUAL_MOTION_EXECUTED_ONCE 등)는
+    # 내부 ID다. 화면에 그대로 내면 규칙 2를 어긴다(20261108 사용자 지적).
+    "result.ACTUAL_MOTION_EXECUTED_ONCE": {"ko": "실행 완료", "en": "Completed"},
+    "result.MOVED": {"ko": "이동 완료", "en": "Moved"},
+    "result.REPEAT_COMPLETED": {"ko": "반복 완료", "en": "Repeat completed"},
+    "result.SELF_CHECK": {"ko": "상태점검 완료", "en": "Self-check done"},
+    "result.READY": {"ko": "준비됨", "en": "Ready"},
+    "result.CANCELED": {"ko": "취소됨", "en": "Cancelled"},
+    "result.DISCONNECTED": {"ko": "연결 끊김", "en": "Disconnected"},
+    "result.RUNTIME_UNREACHABLE": {"ko": "로봇이 응답하지 않음", "en": "Robot not responding"},
+    "result.TARGET_NOT_REACHED": {"ko": "목표에 닿지 못함", "en": "Target not reached"},
+    "result.NO_HARDWARE": {"ko": "로봇 없음 (시늉)", "en": "No robot (simulated)"},
+    "result.NO_TARGETS": {"ko": "보낼 목표 없음", "en": "Nothing to send"},
+    "result.BLOCKED": {"ko": "막힘", "en": "Blocked"},
+    "result.BLOCKED_ESTOP": {"ko": "막힘 — 긴급 정지", "en": "Blocked — emergency stop"},
+    "result.BLOCKED_OUT_OF_RANGE": {"ko": "막힘 — 안전 범위 밖", "en": "Blocked — outside safe range"},
+    "result.BLOCKED_BAD_TARGET": {"ko": "막힘 — 목표값 오류", "en": "Blocked — bad target"},
+    "result.BLOCKED_BUSY": {"ko": "막힘 — 다른 일 중", "en": "Blocked — busy"},
+    "result.BLOCKED_REPEAT_BUSY": {"ko": "막힘 — 다른 일 중", "en": "Blocked — busy"},
+    "result.BLOCKED_DEVICE_BUSY": {"ko": "막힘 — 다른 일 중", "en": "Blocked — busy"},
+    "result.BLOCKED_SAFETY_PRECHECK_FAILED": {"ko": "막힘 — 안전 확인", "en": "Blocked — safety check"},
+    "result.BLOCKED_NO_OPERATOR": {"ko": "막힘 — 안전 확인", "en": "Blocked — safety check"},
+    "result.BLOCKED_WORKSPACE_UNCONFIRMED": {"ko": "막힘 — 안전 확인", "en": "Blocked — safety check"},
+    "result.BLOCKED_TOKEN_NOT_ISSUED": {"ko": "막힘 — 안전 확인", "en": "Blocked — safety check"},
+    "result.BLOCKED_AWAY_MODE": {"ko": "막힘 — 부재 모드", "en": "Blocked — away mode"},
+    "result.BLOCKED_PART_CHANGED": {"ko": "막힘 — 부품이 바뀜", "en": "Blocked — parts changed"},
+    "result.BLOCKED_FINGERPRINT_FORMAT_CHANGED": {"ko": "막힘 — 부품이 바뀜", "en": "Blocked — parts changed"},
+    "result.BLOCKED_NOT_TAUGHT": {"ko": "막힘 — 안 가르친 자세", "en": "Blocked — pose not taught"},
+    "result.BLOCKED_CAPABILITY": {"ko": "막힘 — 이 로봇이 못 하는 일", "en": "Blocked — not supported"},
+    "result.BLOCKED_HARDWARE_REFUSED": {"ko": "막힘 — 로봇이 거절", "en": "Blocked — robot refused"},
+    "result.BLOCKED_READ_FAILED": {"ko": "막힘 — 위치를 못 읽음", "en": "Blocked — could not read position"},
+    "result.BLOCKED_UNSTEADY_READING": {"ko": "막힘 — 위치를 못 읽음", "en": "Blocked — could not read position"},
+    "result.BLOCKED_IN_FLIGHT_SAFETY": {"ko": "멈춤 — 이동 중 안전 한계", "en": "Stopped — safety limit while moving"},
+    "result.BLOCKED_REPEAT_START": {"ko": "막힘 — 반복을 시작하지 못함", "en": "Blocked — repeat did not start"},
+    "result.UNKNOWN": {"ko": "알 수 없는 결과", "en": "Unknown result"},
     "state.verification.UNVERIFIED": {"ko": "해보지 않음", "en": "Not tried"},
     "state.verification.VERIFIED": {"ko": "해봤음", "en": "Verified"},
     "state.verification.REVOKED": {"ko": "다시 확인 필요", "en": "Needs recheck"},
@@ -104,6 +139,16 @@ def joint_label(index: int, is_hand: bool = False, lang: str = "ko") -> str:
     if index == 0:
         return text("joint.base", lang)
     return text("joint.n", lang, n=index)
+
+
+def result_text(verdict: str, lang: str = "ko") -> str:
+    """판정 코드 → 사람이 읽는 말. 모르는 코드도 원문을 내보내지 않는다."""
+    code = str(verdict or "").strip()
+    if not code:
+        return ""
+    if f"result.{code}" in TERMS:
+        return text(f"result.{code}", lang)
+    return text("result.BLOCKED" if code.startswith("BLOCKED") else "result.UNKNOWN", lang)
 
 
 def bundle(lang: str = "ko", mode: str = MODE_USER) -> dict[str, str]:

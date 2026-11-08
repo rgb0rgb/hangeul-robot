@@ -380,6 +380,11 @@ def _robot_row(instance) -> dict[str, Any]:
             "en": terms.text(f"state.run.{rt.get('run_state') or '대기'}", "en"),
         },
         "last_result": rt.get("last_result") or "",
+        # 판정 코드는 내부 ID다. 화면에 보일 말은 terms.py가 두 말로 만든다.
+        "last_result_i18n": {
+            "ko": terms.result_text(rt.get("last_result") or "", "ko"),
+            "en": terms.result_text(rt.get("last_result") or "", "en"),
+        },
         "last_error": rt.get("last_error") or "",
         "multi_run": rt.get("multi_run") or {"state": "idle"},
         # 새 구조에서 추가된 것 — 화면은 무시해도 되지만 있으면 쓴다

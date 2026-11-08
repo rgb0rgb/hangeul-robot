@@ -1,3 +1,13 @@
+# 0.5.1 — The robot list says what happened in words (2026-11-08)
+
+- The robot list showed the raw verdict code (`Last: ACTUAL_MOTION_EXECUTED_ONCE`). Words for
+  31 verdicts now live in `terms.py` (Korean · English) and the console sends them next to the code
+  (`last_result_i18n`). An unknown code is never shown as is ("Blocked" / "Unknown result").
+- A test collects the verdict codes from the runtime and console sources, so a new code without a
+  word fails the suite.
+- The narrow status column clipped the line on both sides and broke Korean words in the middle.
+- Screen-text change only; no robot behaviour changed.
+
 # 0.5.0 — FAIRINO FR5 in ROS 2 simulation (2026-11-08)
 
 - **Not yet:** simulation only (ros2_control mock). The real FR5, the real controller

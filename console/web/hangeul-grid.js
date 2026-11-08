@@ -499,7 +499,10 @@
         cache.lastResultText.textContent = (uiLang === 'en' ? 'Last: error / ' : '마지막: 오류 / ') + robot.last_error;
         cache.lastResultText.classList.add('hangeul-last-result-error');
       } else if (robot.last_result) {
-        cache.lastResultText.textContent = (uiLang === 'en' ? 'Last: ' : '마지막: ') + robot.last_result;
+        // 판정 코드(ACTUAL_MOTION_EXECUTED_ONCE)를 그대로 그리지 않는다 — 콘솔이 준 말을 쓴다.
+        var resultWords = robot.last_result_i18n || {};
+        cache.lastResultText.textContent = (uiLang === 'en' ? 'Last: ' : '마지막: ')
+          + (resultWords[uiLang] || resultWords.ko || '');
         cache.lastResultText.classList.remove('hangeul-last-result-error');
       } else {
         cache.lastResultText.textContent = '';
