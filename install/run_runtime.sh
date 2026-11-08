@@ -50,5 +50,7 @@ DEVICE="${DEVICE:-$DESC_DEVICE}"
 PORT="${PORT:-$DESC_PORT}"
 
 echo "런타임 ${MODULE} — 장치 ${DEVICE:-(없음)} · 포트 ${PORT}"
-PYTHONPATH=runtime/src exec "$PYTHON" -m hangeul_runtime.server \
+# 이미 잡힌 PYTHONPATH는 이어 붙인다. 덮어쓰면 ROS 2를 source해도 rclpy를 못 찾아
+# 시늉 모드로 뜬다(FAIRINO 시뮬레이션 연결 20261108).
+PYTHONPATH="runtime/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m hangeul_runtime.server \
   --module "$MODULE" --device "$DEVICE" --port "$PORT" "$@"

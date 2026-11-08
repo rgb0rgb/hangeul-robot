@@ -70,6 +70,7 @@ Excluded logs, private robot instances, customer-specific material, and commerci
 | OpenManipulator-X 어댑터 | 포함 |
 | MyCobot 280 M5 어댑터 | 포함 |
 | ROS 2 팔 어댑터 (ros2_control) | 포함 · 시뮬레이션만 검증, 실물 미검증 |
+| FAIRINO FR5 (ROS 2) | 포함 · 시뮬레이션만 검증, 실물 미검증 |
 | 기본 안전/전류/온도 제한 파일 | 포함 |
 | 고객/상업 연동 코드 | 제외 |
 
@@ -85,6 +86,10 @@ Excluded logs, private robot instances, customer-specific material, and commerci
 | 실물 로봇 | **미검증** |
 
 ROS 2가 설치되지 않은 환경에는 영향이 없습니다(`rclpy`는 이 어댑터를 열 때만 불러옵니다).
+
+**0.4.4까지 이 경로에 결함 세 가지가 있었습니다.** 화면이 이름 관절(`j1`)을 그리지 못하고 OMX 관절을
+대신 그렸고, 런타임은 이름 관절 이동 요청에 HTTP 500을 냈으며, 정지 해제는 늘 실패로 판정했습니다.
+FAIRINO FR5를 붙이며 드러났고 이번에 고쳤습니다 — `CHANGELOG.md`.
 자세한 기록: [docs/ROS2_CONNECTION_AND_ACTUATOR_SIMULATION_20260921_KR.md](docs/ROS2_CONNECTION_AND_ACTUATOR_SIMULATION_20260921_KR.md),
 [docs/ACTUATOR_PHYSICS_BENCH_20260921_KR.md](docs/ACTUATOR_PHYSICS_BENCH_20260921_KR.md)
 
@@ -133,6 +138,22 @@ Ubuntu/WSL에서는 Python 3, pip, venv가 필요합니다 (`python3-venv` 패�
 ```bash
 ./install/install.sh
 ```
+
+## FAIRINO FR5 — 시뮬레이션만
+
+FAIRINO 공식 ROS 2 패키지(`frcobot_ros2`, ros2_control mock)에 붙였습니다. **실물 FR5·실물 제어기·IP 연결은
+해 보지 않았습니다.** 관절 범위는 URDF 값에서 5° 안쪽이고 실측이 아닙니다. 손은 없습니다.
+
+| 확인한 것 (ROS 2 Jazzy · WSL2) | 결과 |
+|---|---|
+| 범위 밖 요청 | 거절, 컨트롤러에 아무것도 나가지 않음 |
+| 이동 · 정지 · 정지 해제 | `/joint_states`로 확인 |
+| 화면에서 자세 저장 · 순서 실행 | 화면 기록과 `/joint_states` 궤적 일치 |
+| `run.sh` / `run_wsl.bat` 한 번 | 시뮬레이터 · rviz2 · 런타임 · 화면이 차례로 뜸 |
+| 실물 | **미검증** |
+
+ROS 2 Jazzy와 FAIRINO 시뮬레이터 빌드가 먼저 있어야 합니다(저장소 밖 `~/fairino_ws`).
+준비 명령과 검증 기록: [docs/FAIRINO_FR5_SIMULATION_20261108.md](docs/FAIRINO_FR5_SIMULATION_20261108.md)
 
 ## 실행
 

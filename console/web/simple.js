@@ -546,24 +546,50 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+// 관절 식별자는 숫자일 수도 이름일 수도 있다(콘솔 id_policy: opaque_joint_ids).
+// OMX·MyCobot은 숫자(11, 1)를, ROS 2 팔은 이름(j1, shoulder_pan_joint)을 쓴다.
+// 전에는 전부 parseInt를 거쳐 이름이 NaN으로 버려지고, 화면이 아무 말 없이
+// OMX 기본 관절을 그렸다(FAIRINO FR5 20261108). 숫자는 예전과 똑같이 숫자로 둔다.
+function jointKey(value) {
+  var text = String(value);
+  return /^-?\d+$/.test(text) ? parseInt(text, 10) : text;
+}
+
+function sameJoint(a, b) {
+  return a !== null && a !== undefined && b !== null && b !== undefined && String(jointKey(a)) === String(jointKey(b));
+}
+
+// 인라인 onclick에 넣을 인자. 숫자는 그대로, 이름은 따옴표로 감싼다 —
+// 감싸지 않으면 moveJointTo(j1)이 되어 j1을 변수로 찾다 멈춘다.
+function jointArg(jointId) {
+  var key = jointKey(jointId);
+  if (typeof key === 'number') return String(key);
+  return escapeHtml("'" + String(key).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'");
+}
+
+// 로그·안내에 쓰는 짧은 이름. 숫자 관절은 예전처럼 'J11', 이름 관절은 그대로 'j1'.
+function jointTag(jointId) {
+  return typeof jointKey(jointId) === 'number' ? 'J' + jointId : String(jointId);
+}
+
 function normalizeRobotJoints(payload) {
   var data = payload && Array.isArray(payload.arm_joints) ? payload : DEFAULT_ROBOT_JOINTS;
   var arm = data.arm_joints.slice(0, 8).map(function(j) {
-    var id = parseInt(j.joint_id !== undefined ? j.joint_id : j.id, 10);
+    var id = jointKey(j.joint_id !== undefined ? j.joint_id : j.id);
     return {
       id: String(id),
       joint_id: id,
       role: 'arm',
-      label_kr: j.label_kr || ('J' + id),
-      label_en: j.label_en || ('J' + id),
+      label_kr: j.label_kr || jointTag(id),
+      label_en: j.label_en || jointTag(id),
       default_ticks: parseInt(j.default_ticks !== undefined ? j.default_ticks : 2048, 10)
     };
-  }).filter(function(j) { return !isNaN(j.joint_id); });
+  }).filter(function(j) { return j.joint_id !== '' && !(typeof j.joint_id === 'number' && isNaN(j.joint_id)); });
   if (arm.length < 1) return normalizeRobotJoints(DEFAULT_ROBOT_JOINTS);
   var gripper = null;
   if (data.gripper_joint) {
-    var gid = parseInt(data.gripper_joint.joint_id !== undefined ? data.gripper_joint.joint_id : data.gripper_joint.id, 10);
-    if (!isNaN(gid)) {
+    var gid = jointKey(data.gripper_joint.joint_id !== undefined ? data.gripper_joint.joint_id : data.gripper_joint.id);
+    if (gid !== '' && !(typeof gid === 'number' && isNaN(gid))) {
       gripper = {
         id: String(gid),
         joint_id: gid,
@@ -585,8 +611,8 @@ function applyRobotJoints(payload) {
   var excluded = (payload && Array.isArray(payload.excluded_joints))
     ? payload.excluded_joints.map(function(j) {
         var raw = String(j).replace(/^joint_/, '');
-        return parseInt(raw, 10);
-      }).filter(function(j) { return !isNaN(j); })
+        return jointKey(raw);
+      }).filter(function(j) { return j !== '' && !(typeof j === 'number' && isNaN(j)); })
     : [];
   // 제외 관절도 정상 모델에서는 존재하므로 화면에는 유지한다.
   state.excludedJointIds = excluded;
@@ -611,7 +637,7 @@ function armJointIds() {
 
 function isExcludedJoint(jointId) {
   return Array.isArray(state.excludedJointIds)
-    && state.excludedJointIds.indexOf(parseInt(jointId, 10)) >= 0;
+    && state.excludedJointIds.some(function(j) { return sameJoint(j, jointId); });
 }
 
 function operableJointIds() {
@@ -621,9 +647,9 @@ function operableJointIds() {
 function jointMeta(jointId) {
   var joints = (state.robotJoints && state.robotJoints.all_joints) || DEFAULT_ROBOT_JOINTS.arm_joints.concat([DEFAULT_ROBOT_JOINTS.gripper_joint]);
   for (var i = 0; i < joints.length; i += 1) {
-    if (parseInt(joints[i].joint_id, 10) === parseInt(jointId, 10)) return joints[i];
+    if (sameJoint(joints[i].joint_id, jointId)) return joints[i];
   }
-  return { joint_id: parseInt(jointId, 10), label_kr: 'J' + jointId, label_en: 'J' + jointId, default_ticks: 2048 };
+  return { joint_id: jointKey(jointId), label_kr: jointTag(jointId), label_en: jointTag(jointId), default_ticks: 2048 };
 }
 
 function jointLabel(jointId) {
@@ -631,13 +657,17 @@ function jointLabel(jointId) {
   return lang === 'ko' ? (meta.label_kr || meta.label_en) : (meta.label_en || meta.label_kr);
 }
 
+// 이름은 그대로 두지만 뜻은 '밀리도를 도로 보여주는 화면'이다. MyCobot만이 아니라
+// 기술서 단위가 밀리도인 팔(FAIRINO FR5 등)도 같은 화면을 쓴다 — 콘솔이 value_units로 알려준다.
 function isMyCobotUi() {
   return getRobotModel() === 'mycobot_280_m5'
-    || !!(state.robotJoints && state.robotJoints.robot_family === 'mycobot_280_m5');
+    || !!(state.robotJoints && state.robotJoints.robot_family === 'mycobot_280_m5')
+    || !!(state.robotJoints && state.robotJoints.value_units
+          && state.robotJoints.value_units.raw_position === 'millidegrees');
 }
 
 function isGripperJoint(jointId) {
-  return state.gripperJointId !== null && parseInt(jointId, 10) === parseInt(state.gripperJointId, 10);
+  return state.gripperJointId !== null && sameJoint(jointId, state.gripperJointId);
 }
 
 // MyCobot API는 팔을 millidegrees로 주고받지만 화면은 degrees로 표시한다.
@@ -824,13 +854,13 @@ function renderRobotJointUi() {
         '<span class="s-jog-val" id="jog-val-' + jointId + '">' + escapeHtml(formatUiValue(jointId, defaultValue)) + '</span>' +
         '<div style="display:flex; gap:4px; align-items:center;">' +
           '<input type="number" id="jog-direct-' + jointId + '" ' + (excluded ? 'disabled ' : '') + 'step="' + (isMyCobotUi() && !isGripperJoint(jointId) ? '0.01' : '1') + '" placeholder="' + escapeHtml(t().placeholderValue || '수치') + '" style="width:60px; padding:4px; border-radius:4px; border:1px solid #475569; background:#0f172a; color:#fff; font-size:0.8rem;" />' +
-          '<button class="s-btn" id="btn-move-' + jointId + '" ' + (excluded ? 'disabled ' : '') + 'onclick="moveJointTo(' + jointId + ')" style="padding:4px 8px; font-size:0.75rem; background:#3b82f6; border-color:#2563eb; color:#fff; border-radius:4px;">' + escapeHtml(t().btnMove) + '</button>' +
+          '<button class="s-btn" id="btn-move-' + jointId + '" ' + (excluded ? 'disabled ' : '') + 'onclick="moveJointTo(' + jointArg(jointId) + ')" style="padding:4px 8px; font-size:0.75rem; background:#3b82f6; border-color:#2563eb; color:#fff; border-radius:4px;">' + escapeHtml(t().btnMove) + '</button>' +
         '</div>' +
         '<div class="s-jog-btns">' +
-          '<button class="s-btn s-btn-jog" ' + (excluded ? 'disabled ' : '') + 'onclick="jogJoint(' + jointId + ', ' + uiDeltaToRaw(jointId, presets[0]) + ')">' + presets[0] + '</button>' +
-          '<button class="s-btn s-btn-jog" ' + (excluded ? 'disabled ' : '') + 'onclick="jogJoint(' + jointId + ', ' + uiDeltaToRaw(jointId, presets[1]) + ')">' + presets[1] + '</button>' +
-          '<button class="s-btn s-btn-jog" ' + (excluded ? 'disabled ' : '') + 'onclick="jogJoint(' + jointId + ', ' + uiDeltaToRaw(jointId, presets[2]) + ')">+' + presets[2] + '</button>' +
-          '<button class="s-btn s-btn-jog" ' + (excluded ? 'disabled ' : '') + 'onclick="jogJoint(' + jointId + ', ' + uiDeltaToRaw(jointId, presets[3]) + ')">+' + presets[3] + '</button>' +
+          '<button class="s-btn s-btn-jog" ' + (excluded ? 'disabled ' : '') + 'onclick="jogJoint(' + jointArg(jointId) + ', ' + uiDeltaToRaw(jointId, presets[0]) + ')">' + presets[0] + '</button>' +
+          '<button class="s-btn s-btn-jog" ' + (excluded ? 'disabled ' : '') + 'onclick="jogJoint(' + jointArg(jointId) + ', ' + uiDeltaToRaw(jointId, presets[1]) + ')">' + presets[1] + '</button>' +
+          '<button class="s-btn s-btn-jog" ' + (excluded ? 'disabled ' : '') + 'onclick="jogJoint(' + jointArg(jointId) + ', ' + uiDeltaToRaw(jointId, presets[2]) + ')">+' + presets[2] + '</button>' +
+          '<button class="s-btn s-btn-jog" ' + (excluded ? 'disabled ' : '') + 'onclick="jogJoint(' + jointArg(jointId) + ', ' + uiDeltaToRaw(jointId, presets[3]) + ')">+' + presets[3] + '</button>' +
         '</div>';
       panel.insertBefore(row, microPanel);
     });
@@ -1124,7 +1154,7 @@ function applyI18n() {
   var sllmQ = document.getElementById('sllm-query');
   if (sllmQ) sllmQ.placeholder = d.sllmQueryPlaceholder;
   setText('lbl-micro-title', d.lblMicroTitle);
-  setText('lbl-micro-desc', d.lblMicroDesc);
+  setText('lbl-micro-desc', microMoveDesc(d));
   setText('lbl-micro-joint', d.lblMicroJoint);
   setText('lbl-micro-delta', d.lblMicroDelta);
   setText('lbl-micro-repeat', d.lblMicroRepeat);
@@ -3241,7 +3271,7 @@ function motionFailureMessage(data, jointId, target) {
 function jogJoint(jointId, deltaTicks) {
   var deltaUi = rawToUiValue(jointId, deltaTicks);
   var deltaUnit = isMyCobotUi() ? (isGripperJoint(jointId) ? '%' : '°') : 'ticks';
-  slog((lang === 'ko' ? 'J' + jointId + ' 관절 이동 요청 (' + deltaUi + ' ' + deltaUnit + ')' : 'Requested J' + jointId + ' move (' + deltaUi + ' ' + deltaUnit + ')'));
+  slog((lang === 'ko' ? jointTag(jointId) + ' 관절 이동 요청 (' + deltaUi + ' ' + deltaUnit + ')' : 'Requested ' + jointTag(jointId) + ' move (' + deltaUi + ' ' + deltaUnit + ')'));
   
   var btns = document.querySelectorAll('.s-btn-jog');
   btns.forEach(function(b) { b.disabled = true; });
@@ -3267,7 +3297,7 @@ function jogJoint(jointId, deltaTicks) {
         }
       }
       if (data.success && data.present) {
-        slog((lang === 'ko' ? 'J' + jointId + ' 이동 완료 (Target: ' + formatUiValue(jointId, data.target) + ')' : 'J' + jointId + ' moved successfully (Target: ' + formatUiValue(jointId, data.target) + ')'), 's-log-ok');
+        slog((lang === 'ko' ? jointTag(jointId) + ' 이동 완료 (Target: ' + formatUiValue(jointId, data.target) + ')' : jointTag(jointId) + ' moved successfully (Target: ' + formatUiValue(jointId, data.target) + ')'), 's-log-ok');
       } else {
         var actual = data.present && data.present[String(jointId)] !== undefined
           ? formatUiValue(jointId, data.present[String(jointId)]) : '-';
@@ -3291,11 +3321,23 @@ function rebuildMicroMoveDefs() {
     MICRO_MOVE_DEFS[String(jointId)] = {
       jointId: jointId,
       delta: isMyCobotUi() ? 5 : 50,     // MyCobot 5도 · OMX 50틱
-      labelKo: meta.label_kr || ('J' + jointId),
-      labelEn: meta.label_en || ('J' + jointId)
+      labelKo: meta.label_kr || jointTag(jointId),
+      labelEn: meta.label_en || jointTag(jointId)
     };
   });
   populateMicroMoveJointSelect();
+  // 로봇이 바뀌면 입력칸 기본값·한계·설명도 그 로봇의 단위로 다시 맞춘다. 전에는 관절을
+  // 바꿀 때만 맞춰서, 처음 연 화면에는 HTML의 50(OMX 틱)이 남았다 — 도 단위 팔에서는
+  // 50°다(FAIRINO FR5 20261108). OMX는 기본값이 같아 달라지는 것이 없다.
+  updateMicroMoveDefaults();
+  setText('lbl-micro-desc', microMoveDesc(t()));
+}
+
+function microMoveDesc(d) {
+  if (!isMyCobotUi()) return d.lblMicroDesc;
+  return lang === 'ko'
+    ? '1회 최대 ' + microMoveLimit() + '°, 지정 횟수만큼 천천히 반복 조그합니다.'
+    : 'Up to ' + microMoveLimit() + '° per step, repeated slowly for the number of times you set.';
 }
 
 function defaultMicroMoveKey() {
@@ -3322,9 +3364,9 @@ function microMoveLimit() {
   // 기본값(5도)조차 못 넘게 만들어 미세 이동을 무의미하게 했다.
   if (!isMyCobotUi()) return 200;
   var selected = document.getElementById('micro-move-joint');
-  var range = selected ? getJointTickLimit(parseInt(selected.value, 10)) : null;
+  var range = selected ? getJointTickLimit(jointKey(selected.value)) : null;
   if (!range) return 180;
-  var span = isGripperJoint(parseInt(selected.value, 10))
+  var span = isGripperJoint(jointKey(selected.value))
     ? range[1] - range[0]
     : (range[1] - range[0]) / 1000;
   return Math.max(5, span / 2);
@@ -3400,7 +3442,7 @@ function updateMicroMovePreview(normalize) {
     repeat = readMicroMoveRepeatForPreview(repeatEl ? repeatEl.value : 1);
   }
   var unit = isMyCobotUi() ? (isGripperJoint(def.jointId) ? '%' : '°') : ' ticks';
-  preview.textContent = 'J' + def.jointId + ' ' + (delta == null ? '입력 중' : ((delta > 0 ? '+' : '') + delta + unit)) + ' x ' + (repeat == null ? '?' : repeat) + (lang === 'ko' ? '회' : 'x');
+  preview.textContent = jointTag(def.jointId) + ' ' + (delta == null ? '입력 중' : ((delta > 0 ? '+' : '') + delta + unit)) + ' x ' + (repeat == null ? '?' : repeat) + (lang === 'ko' ? '회' : 'x');
 }
 
 function normalizeMicroMoveInputs() {
@@ -3480,15 +3522,15 @@ function startMicroMoveExecution(move) {
   var rawDelta = uiDeltaToRaw(move.jointId, move.delta);
   var microUnit = isMyCobotUi() ? (isGripperJoint(move.jointId) ? '%' : '°') : ' ticks';
   slog((lang === 'ko'
-    ? '미세 이동 전용 모드 시작: ' + move.label + ' J' + move.jointId + ' ' + move.delta + microUnit + ' x ' + move.repeat + '회'
-    : 'Micro move start: ' + move.label + ' J' + move.jointId + ' ' + move.delta + microUnit + ' x ' + move.repeat));
+    ? '미세 이동 전용 모드 시작: ' + move.label + ' ' + jointTag(move.jointId) + ' ' + move.delta + microUnit + ' x ' + move.repeat + '회'
+    : 'Micro move start: ' + move.label + ' ' + jointTag(move.jointId) + ' ' + move.delta + microUnit + ' x ' + move.repeat));
 
   var chain = Promise.resolve();
   for (var i = 1; i <= move.repeat; i += 1) {
     (function(step) {
       chain = chain.then(function() {
         if (status) {
-          status.textContent = (lang === 'ko' ? '실행 중 ' : 'Running ') + step + '/' + move.repeat + ' · J' + move.jointId + ' ' + (move.delta > 0 ? '+' : '') + move.delta;
+          status.textContent = (lang === 'ko' ? '실행 중 ' : 'Running ') + step + '/' + move.repeat + ' · ' + jointTag(move.jointId) + ' ' + (move.delta > 0 ? '+' : '') + move.delta;
         }
         return jogJointOnce(move.jointId, rawDelta);
       });
@@ -3684,7 +3726,7 @@ function submitSavePose() {
       if (!isNaN(val)) {
         var range = getJointTickLimit(j);
         if (range && (val < range[0] || val > range[1])) {
-          rangeErrors.push('J' + j + ' ' + val + ' (' + range[0] + '~' + range[1] + ')');
+          rangeErrors.push(jointTag(j) + ' ' + val + ' (' + range[0] + '~' + range[1] + ')');
         }
         targets[j] = val;
       }
@@ -3781,12 +3823,12 @@ function moveJointTo(jointId) {
   var range = getJointTickLimit(jointId);
   if (range && (targetTicks < range[0] || targetTicks > range[1])) {
     alertOrStyled(lang === 'ko'
-      ? 'J' + jointId + ' 안전 범위 밖입니다. 허용: ' + formatUiRange(jointId, range)
-      : 'J' + jointId + ' is outside safety range. Allowed: ' + formatUiRange(jointId, range));
+      ? jointTag(jointId) + ' 안전 범위 밖입니다. 허용: ' + formatUiRange(jointId, range)
+      : jointTag(jointId) + ' is outside safety range. Allowed: ' + formatUiRange(jointId, range));
     return;
   }
   
-  slog((lang === 'ko' ? 'J' + jointId + ' 관절 절대 위치 이동 요청: ' + formatUiValue(jointId, targetTicks) : 'Requested J' + jointId + ' move to: ' + formatUiValue(jointId, targetTicks)));
+  slog((lang === 'ko' ? jointTag(jointId) + ' 관절 절대 위치 이동 요청: ' + formatUiValue(jointId, targetTicks) : 'Requested ' + jointTag(jointId) + ' move to: ' + formatUiValue(jointId, targetTicks)));
   
   var btns = document.querySelectorAll('.s-btn-jog');
   btns.forEach(function(b) { b.disabled = true; });
@@ -3811,7 +3853,7 @@ function moveJointTo(jointId) {
         }
       }
       if (data.success && data.present) {
-        slog((lang === 'ko' ? 'J' + jointId + ' 이동 완료 (현재: ' + formatUiValue(jointId, data.present[jointId]) + ')' : 'J' + jointId + ' moved successfully (Current: ' + formatUiValue(jointId, data.present[jointId]) + ')'), 's-log-ok');
+        slog((lang === 'ko' ? jointTag(jointId) + ' 이동 완료 (현재: ' + formatUiValue(jointId, data.present[jointId]) + ')' : jointTag(jointId) + ' moved successfully (Current: ' + formatUiValue(jointId, data.present[jointId]) + ')'), 's-log-ok');
       } else {
         var actual = data.present && data.present[String(jointId)] !== undefined
           ? formatUiValue(jointId, data.present[String(jointId)]) : '-';

@@ -1,0 +1,94 @@
+{
+  "module_id": "arm_fairino5",
+  "module_class": "arm",
+  "display_name": "FAIRINO FR5 (ROS 2 시뮬레이션)",
+  "mount": "core_a.arm_b",
+  "joints": [
+    {
+      "id": "j1",
+      "role": "base"
+    },
+    {
+      "id": "j2",
+      "role": "joint"
+    },
+    {
+      "id": "j3",
+      "role": "joint"
+    },
+    {
+      "id": "j4",
+      "role": "joint"
+    },
+    {
+      "id": "j5",
+      "role": "joint"
+    },
+    {
+      "id": "j6",
+      "role": "joint"
+    }
+  ],
+  "value_unit": "millidegree",
+  "provides": [
+    "motion.move_joint",
+    "motion.move_pose",
+    "motion.read_pose",
+    "motion.fine_move"
+  ],
+  "requires": [
+    "bus.ethernet"
+  ],
+  "limits": {
+    "payload_g": 5000,
+    "mass_g": 22000,
+    "reach_mm": 922
+  },
+  "safety_class": "motion",
+  "runtime_url": "http://127.0.0.1:8606",
+  "device": {
+    "linux": "/fairino5_controller",
+    "windows": "/fairino5_controller"
+  },
+  "runtime_model": "fairino5_ros2_jtc",
+  "runtime_adapter": "ros2_arm_adapter:Ros2ArmAdapter",
+  "unit": {
+    "kind": "millidegree",
+    "per_degree": 1000,
+    "center": 0,
+    "note": "ROS 2는 라디안 실수를 쓴다. 정수 파이프라인을 지키려고 밀리도(0.001°)로 둔다."
+  },
+  "auto_recover": {
+    "safe_without_operator": false,
+    "reason": "컨트롤러가 goal을 거절한 이유를 사람이 봐야 한다"
+  },
+  "model_aliases": [
+    "fairino5",
+    "fr5"
+  ],
+  "hardware_evidence": {
+    "state": "virtual_integration_tested",
+    "ko": "가상 제어기 연결 검증 · 실물 미검증",
+    "en": "Virtual controller integration tested; physical robot unverified"
+  },
+  "ros2": {
+    "joint_states_topic": "/joint_states",
+    "state_timeout_s": 2.0,
+    "connect_timeout_s": 5.0,
+    "goal_timeout_margin_s": 3.0,
+    "velocity_deg_s_per_unit": 1.0,
+    "max_velocity_rad_s": 0.5,
+    "min_duration_s": 0.2,
+    "max_duration_s": 120.0,
+    "evidence_kind": "physical_unverified",
+    "setup": [
+      "/opt/ros/jazzy/setup.bash",
+      "~/fairino_ws/install/setup.bash"
+    ],
+    "simulator": {
+      "command": "ros2 launch fairino5_v6_moveit2_config demo.launch.py",
+      "ready_timeout_s": 60,
+      "note": "실행기가 제어기를 못 찾을 때만 띄운다. 실물 FR5에 붙일 때는 이 칸을 지운다"
+    }
+  }
+}

@@ -48,6 +48,7 @@ check the robot and press "Release stop" yourself.
 | OpenManipulator-X adapter | Included |
 | MyCobot 280 M5 adapter | Included |
 | ROS 2 arm adapter (ros2_control) | Included · simulation only, physically unverified |
+| FAIRINO FR5 (ROS 2) | Included · simulation only, physically unverified |
 | Basic safety/current/temperature limit files | Included |
 | Customer or commercial integrations | Excluded |
 
@@ -63,8 +64,29 @@ An `arm_ros2` adapter for the ros2_control JointTrajectoryController is included
 | Physical robot | **Not verified** |
 
 Machines without ROS 2 are unaffected (`rclpy` is imported only when this adapter is opened).
+
+**Up to 0.4.4 this path had three defects.** The screen could not draw named joints (`j1`) and drew
+the OMX joints instead, the runtime answered HTTP 500 to moves on named joints, and releasing an
+emergency stop was always judged a failure. Attaching FAIRINO FR5 exposed them; they are fixed now — see `CHANGELOG.md`.
 Details (Korean): [docs/ROS2_CONNECTION_AND_ACTUATOR_SIMULATION_20260921_KR.md](docs/ROS2_CONNECTION_AND_ACTUATOR_SIMULATION_20260921_KR.md),
 [docs/ACTUATOR_PHYSICS_BENCH_20260921_KR.md](docs/ACTUATOR_PHYSICS_BENCH_20260921_KR.md)
+
+## FAIRINO FR5 — simulation only
+
+Attached to FAIRINO's official ROS 2 packages (`frcobot_ros2`, ros2_control mock). **The real FR5, the real
+controller and its IP connection have not been tried.** Joint ranges are 5° inside the URDF values, not
+measured. There is no hand.
+
+| Checked (ROS 2 Jazzy · WSL2) | Result |
+|---|---|
+| Out-of-range request | Refused; nothing sent to the controller |
+| Move · stop · release stop | Confirmed on `/joint_states` |
+| Save poses and run a sequence from the screen | Screen log matches the `/joint_states` trajectory |
+| One `run.sh` / `run_wsl.bat` | Simulator, rviz2, runtime and screen come up in order |
+| Physical robot | **Not verified** |
+
+ROS 2 Jazzy and a build of the FAIRINO simulator are needed first (outside this repository, `~/fairino_ws`).
+Setup commands and the verification record (Korean): [docs/FAIRINO_FR5_SIMULATION_20261108.md](docs/FAIRINO_FR5_SIMULATION_20261108.md)
 
 ## Run — Linux / WSL
 

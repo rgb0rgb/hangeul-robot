@@ -1331,8 +1331,15 @@ def _run(targets: dict[str, Any], velocity: int, label: str, verdict: str,
 def _check_all(targets: dict[str, Any], velocity: int | None) -> int:
     _refresh_files()
     speed = safety.DEFAULT_VELOCITY
+    known = set(_arm_joint_ids())
+    if _hand_joint_id():
+        known.add(_hand_joint_id())
     for joint, target in targets.items():
-        speed = safety.check_move(state, int(joint), int(target), CONFIG["limits"], velocity)
+        # 관절은 숫자(OMX 11)일 수도 이름(ROS 2 j1)일 수도 있다. int()로 바꾸면 이름이
+        # ValueError → HTTP 500이 되어 화면에 '접속 끊김'으로 보였다(FR5 20261108).
+        if CONFIG.get("descriptor", {}).get("joints") and str(joint) not in known:
+            raise safety.SafetyBlocked("unknown_joint", f"Unknown or disabled joint: {joint}")
+        speed = safety.check_move(state, str(joint), int(target), CONFIG["limits"], velocity)
     return speed
 
 

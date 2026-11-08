@@ -1,3 +1,31 @@
+# 0.5.0 — FAIRINO FR5 in ROS 2 simulation (2026-11-08)
+
+- **Not yet:** simulation only (ros2_control mock). The real FR5, the real controller
+  (`fairino_hardware`) and its IP connection have not been tried. Joint ranges are 5° inside the
+  URDF values, not measured. No hand. Not started on native Windows (WSL/Linux only).
+- New part descriptor `arm_fairino5` (j1–j6, `/fairino5_controller`, port 8606, 0.5 rad/s) and
+  safety limits `data/safety_limits_arm_fairino5.json`.
+- **Safety behaviour change — releasing an emergency stop on a ROS 2 arm always failed.** The
+  controller fills `error_string` ("Goal successfully reached!") even on success; it was reported as
+  an error, so recovery verification read success as failure and each attempt also latched a
+  disconnect. It is now an error only when the goal failed. OMX/MyCobot paths are unchanged.
+- The runtime no longer turns a move on a named joint (`j1`) into HTTP 500 (`int(joint)`); unknown
+  joints are refused with a reason.
+- `install/run_runtime.sh` appends to PYTHONPATH instead of replacing it. Replacing it hid `rclpy`
+  even after sourcing ROS 2, so the runtime came up in simulate mode.
+- Launcher: an arm whose descriptor has a `ros2` section looks for its ROS 2 controller instead of a
+  USB device. If none answers and the descriptor names a simulator, it starts that first; stop ends
+  only simulators it started. `ros2 action list` is not used — the ros2 daemon kept reporting a
+  stopped simulator's action as present.
+- Screen: named joints were dropped by `parseInt` and **the OMX joints were drawn instead**. Arms in
+  millidegrees are shown in degrees. Screens with numbered joints are unchanged (OMX screen HTML
+  compared identical).
+- **Safety behaviour change — micro-move default on the screen.** A freshly opened screen kept the
+  OMX default (50 ticks), which degree-unit arms (MyCobot, FR5) read as 50°. It is now reset to the
+  robot's default (5°). OMX is unchanged.
+- Checked against `/joint_states` in the simulator: out-of-range refusal, move, stop/release, saving
+  poses and running a sequence from the screen — `docs/FAIRINO_FR5_SIMULATION_20261108.md`.
+
 # 0.4.4 — The screen shows a leftover emergency stop on open (2026-10-20)
 
 - The runtime keeps an emergency-stop latch across restarts (by design), but the screen always

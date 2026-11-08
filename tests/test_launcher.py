@@ -229,3 +229,97 @@ def test_restart_requires_confirmation(client, monkeypatch):
     import subprocess
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: pytest.fail("must not launch"))
     assert not client.post("/api/server-restart", json={}).json()["success"]
+
+
+# ── ROS 2 부품 (FAIRINO 시뮬레이션 20261108) ──────────────────────
+# 장치가 USB가 아니라 컨트롤러 이름이라 USB 찾기로는 늘 '장치 없음'이었다.
+# 윈도우의 run_wsl.bat은 비대화형 셸이라 ~/.bashrc의 ROS source도 닿지 않는다.
+def _ros2_arm(launcher, tmp_path, *, simulator=True, setup_exists=True):
+    setup = tmp_path / "setup.bash"
+    if setup_exists:
+        setup.write_text("", encoding="utf-8")
+    ros2 = {"setup": [str(setup)]}
+    if simulator:
+        ros2["simulator"] = {"command": "ros2 launch fake demo.launch.py", "ready_timeout_s": 2}
+    _arm(launcher, "arm_fr", device={"linux": "/fr_controller"}, ros2=ros2)
+    _robot(launcher, "fr", ["core_a", "arm_fr"], 8606, "FR5")
+    return str(setup)
+
+
+@pytest.fixture
+def ros2_env(launcher, monkeypatch):
+    monkeypatch.setattr(launcher, "IS_WINDOWS", False)
+    monkeypatch.setattr(launcher, "start_console", lambda: {"state": "started", "url": "x"})
+    monkeypatch.setattr(launcher, "time", type("T", (), {"monotonic": staticmethod(__import__("time").monotonic),
+                                                          "sleep": staticmethod(lambda s: None)}))
+    spawned = []
+    monkeypatch.setattr(launcher, "_spawn", lambda name, args, log, pp: spawned.append((name, args)) or 1)
+    return spawned
+
+
+def test_ros2_arm_without_its_environment_is_reported_not_spawned(launcher, tmp_path, monkeypatch, ros2_env):
+    _ros2_arm(launcher, tmp_path, setup_exists=False)
+    monkeypatch.setattr(launcher, "_get", lambda url, timeout=2.0: None)
+    row = launcher.up("start")["runtimes"][0]
+    assert row["state"] == "no_device"
+    assert "ROS 2 환경" in row["message"]
+    assert ros2_env == []
+
+
+def test_ros2_arm_starts_its_simulator_then_a_runtime_inside_ros(launcher, tmp_path, monkeypatch, ros2_env):
+    setup = _ros2_arm(launcher, tmp_path)
+    answers = iter([False, False, True])           # 처음엔 없음 → 시뮬레이터가 뜨며 생김
+    monkeypatch.setattr(launcher, "_ros2_action_ready", lambda files, device: next(answers))
+    up = {"simulated": False, "device": "/fr_controller"}
+    monkeypatch.setattr(launcher, "_get", lambda url, timeout=2.0: None)
+    monkeypatch.setattr(launcher, "_wait_json", lambda url, s: up)
+    row = launcher.up("start")["runtimes"][0]
+    assert row["state"] == "started" and row["simulator"] == "started"
+    (sim_name, sim_args), (rt_name, rt_args) = ros2_env
+    assert sim_name == "ros2_sim_8606" and "ros2 launch fake demo.launch.py" in sim_args[-1]
+    assert rt_name == "runtime_8606"
+    assert rt_args[:2] == ["bash", "-c"] and f"source {setup}" in rt_args[2]
+    assert "--device /fr_controller" in rt_args[2]
+
+
+def test_ros2_arm_uses_a_controller_that_is_already_up(launcher, tmp_path, monkeypatch, ros2_env):
+    _ros2_arm(launcher, tmp_path)
+    monkeypatch.setattr(launcher, "_ros2_action_ready", lambda files, device: True)
+    monkeypatch.setattr(launcher, "_get", lambda url, timeout=2.0: None)
+    monkeypatch.setattr(launcher, "_wait_json", lambda url, s: {"simulated": False})
+    launcher.up("start")
+    assert [name for name, _ in ros2_env] == ["runtime_8606"]   # 시뮬레이터를 겹쳐 띄우지 않는다
+
+
+def test_ros2_arm_without_a_simulator_does_not_invent_one(launcher, tmp_path, monkeypatch, ros2_env):
+    _ros2_arm(launcher, tmp_path, simulator=False)
+    monkeypatch.setattr(launcher, "_ros2_action_ready", lambda files, device: False)
+    monkeypatch.setattr(launcher, "_get", lambda url, timeout=2.0: None)
+    row = launcher.up("start")["runtimes"][0]
+    assert row["state"] == "no_device" and "/fr_controller" in row["message"]
+    assert ros2_env == []
+
+
+def test_a_simulator_that_never_answers_fails_with_its_log(launcher, tmp_path, monkeypatch, ros2_env):
+    _ros2_arm(launcher, tmp_path)
+    monkeypatch.setattr(launcher, "_ros2_action_ready", lambda files, device: False)
+    monkeypatch.setattr(launcher, "_get", lambda url, timeout=2.0: None)
+    row = launcher.up("start")["runtimes"][0]
+    assert row["state"] == "failed" and "ros2_sim_arm_fr.log" in row["message"]
+    assert [name for name, _ in ros2_env] == ["ros2_sim_8606"]   # 런타임은 띄우지 않는다
+
+
+def test_stop_takes_down_only_the_simulator_it_started(launcher, monkeypatch):
+    launcher.RUN_DIR.mkdir(parents=True)
+    (launcher.RUN_DIR / "ros2_sim_8606.pid").write_text(json.dumps({"pid": 4242}))
+    (launcher.RUN_DIR / "ros2_sim_8607.pid").write_text(json.dumps({"pid": 4343}))
+    cmds = {4242: "/usr/bin/python3 /opt/ros/jazzy/bin/ros2 launch x demo.launch.py",
+            4343: "vim notes.txt"}                     # pid가 재사용돼 남의 프로그램이 됐다
+    monkeypatch.setattr(launcher, "_cmdline", lambda pid: cmds.get(pid, ""))
+    alive = {4242, 4343}
+    monkeypatch.setattr(launcher, "_alive", lambda pid: pid in alive)
+    sent = []
+    monkeypatch.setattr(launcher.os, "killpg", lambda pid, sig: (sent.append((pid, sig)), alive.discard(pid)))
+    assert launcher.stop_ros2_simulators() == [4242]
+    assert sent == [(4242, signal.SIGINT)]
+    assert not list(launcher.RUN_DIR.glob("ros2_sim_*.pid"))

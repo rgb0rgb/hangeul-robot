@@ -11,6 +11,21 @@ import uuid
 from typing import Any
 
 
+def result_answer(*, succeeded: bool, canceled: bool, status: int, error_code: int,
+                  error_string: str, feedback_count: int) -> dict[str, Any]:
+    """FollowJointTrajectory 결과 → 어댑터가 읽는 답.
+
+    JTC는 성공에도 error_string("Goal successfully reached!")을 채운다. 그걸
+    error로 올리면 복구 검증(hold_verified)이 성공을 실패로 읽어 정지 해제가
+    영영 안 된다(FAIRINO 시뮬레이션 20261108). 원문은 error_string에 따로 남긴다.
+    """
+    ok = bool(succeeded) and error_code == 0
+    return {"accepted": True, "result_ok": ok, "canceled": bool(canceled),
+            "status": status, "error_code": error_code,
+            "error": "" if ok else (error_string or f"status {status}"),
+            "error_string": error_string, "feedback_count": feedback_count}
+
+
 class Ros2Transport:
     def __init__(self, controller: str, joints: list[str], options: dict[str, Any]):
         import rclpy
@@ -150,11 +165,11 @@ class Ros2Transport:
             result_future.add_done_callback(finished)
             response = self._wait(result_future, time_from_start_s + self.goal_margin)
             result = response.result
-            return {"accepted": True,
-                    "result_ok": response.status == GoalStatus.STATUS_SUCCEEDED and result.error_code == 0,
-                    "canceled": response.status == GoalStatus.STATUS_CANCELED,
-                    "status": response.status, "error_code": result.error_code,
-                    "error": result.error_string, "feedback_count": self.feedback_count}
+            return result_answer(
+                succeeded=response.status == GoalStatus.STATUS_SUCCEEDED,
+                canceled=response.status == GoalStatus.STATUS_CANCELED,
+                status=response.status, error_code=result.error_code,
+                error_string=result.error_string, feedback_count=self.feedback_count)
         except TimeoutError as exc:
             with self._goal_lock:
                 self._generation += 1

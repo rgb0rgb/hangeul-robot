@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -192,6 +193,121 @@ def wsl_attach(desc: dict[str, Any]) -> str:
         return ("USB 장치를 WSL에 붙이려면 한 번 공유가 필요합니다 — 윈도우 관리자 명령창에서 "
                 "usbipd bind --hardware-id " + ", ".join(f"{v:04x}:{p:04x}" for v, p in _usb_ids(desc)))
     return f"USB 장치가 보이지 않습니다 — 케이블과 전원을 확인하세요 ({last or '윈도우에도 없음'})"
+
+
+# ── ROS 2 부품 ──────────────────────────────────────────────────
+# ROS 2 팔의 '장치'는 USB도 파일도 아니라 **컨트롤러 이름**이다(/fairino5_controller).
+# 그래서 위의 USB 찾기로는 영영 '장치 없음'이 된다. 기술서에 ros2 칸이 있는 부품만
+# 이 길로 간다 — USB 로봇의 길은 그대로다.
+#
+# 윈도우에서 두 번 누른 run_wsl.bat은 비대화형 셸이라 ~/.bashrc가 ROS를 source하기
+# 전에 끝난다. 그래서 ROS 환경은 사람의 셸이 아니라 **기술서의 setup 목록**에서 잡는다
+# (FAIRINO 시뮬레이션 연결 20261108).
+def _ros2_setup(desc: dict[str, Any]) -> tuple[list[str], str]:
+    """(source할 파일들, 못 찾은 이유). 하나라도 없으면 띄우지 않는다."""
+    files = [os.path.expanduser(str(f)) for f in (desc.get("ros2") or {}).get("setup") or []]
+    if not files:
+        return [], "기술서에 ROS 2 setup 파일이 없습니다 (ros2.setup)"
+    missing = [f for f in files if not Path(f).is_file()]
+    if missing:
+        return [], "ROS 2 환경을 찾지 못했습니다 — " + ", ".join(missing)
+    return files, ""
+
+
+def _ros2_shell(files: list[str], command: str) -> list[str]:
+    sources = " && ".join(f"source {shlex.quote(f)}" for f in files)
+    return ["bash", "-c", f"{sources} && exec {command}"]
+
+
+# `ros2 action list`는 쓰지 않는다. ros2 데몬이 꺼진 시뮬레이터의 액션을 한동안 기억해
+# "있음"이라 답하고, 그 말을 믿고 띄운 런타임은 시늉 모드로 떨어졌다(20261108 실측).
+# 런타임과 같은 길(새 프로세스의 wait_for_server)로 묻는다.
+_ACTION_PROBE = (
+    "import sys, rclpy\n"
+    "from rclpy.action import ActionClient\n"
+    "from control_msgs.action import FollowJointTrajectory\n"
+    "rclpy.init(); node = rclpy.create_node('hangeul_launcher_probe')\n"
+    "ok = ActionClient(node, FollowJointTrajectory, sys.argv[1]).wait_for_server(timeout_sec=3.0)\n"
+    "print('READY' if ok else 'ABSENT')\n"
+)
+
+
+def _ros2_action_ready(files: list[str], device: str) -> bool:
+    action = device.rstrip("/") + "/follow_joint_trajectory"
+    command = "python3 -c " + shlex.quote(_ACTION_PROBE) + " " + shlex.quote(action)
+    return "READY" in _run_text(_ros2_shell(files, command), timeout=20).split()
+
+
+def start_ros2_runtime(group: dict[str, Any], desc: dict[str, Any],
+                       row: dict[str, Any]) -> dict[str, Any]:
+    """제어기(없으면 기술서의 시뮬레이터)가 답한 뒤에 런타임을 띄운다."""
+    port, module = group["port"], group["module"]
+    if IS_WINDOWS:
+        row.update(state="no_device", message="ROS 2 부품은 WSL/리눅스에서만 띄웁니다")
+        return row
+    files, reason = _ros2_setup(desc)
+    device = str((desc.get("device") or {}).get("linux") or "")
+    if not files or not device:
+        row.update(state="no_device", message=reason or "기술서에 컨트롤러 이름이 없습니다")
+        return row
+    row["device"] = device
+    sim = (desc.get("ros2") or {}).get("simulator") or {}
+    if not _ros2_action_ready(files, device):
+        if not sim.get("command"):
+            row.update(state="no_device", message=f"ROS 2 제어기 {device}가 보이지 않습니다")
+            return row
+        _spawn(f"ros2_sim_{port}", _ros2_shell(files, str(sim["command"])),
+               ROOT / "data" / f"ros2_sim_{module}.log", "")
+        end = time.monotonic() + float(sim.get("ready_timeout_s", 60))
+        while not _ros2_action_ready(files, device):
+            if time.monotonic() >= end:
+                row.update(state="failed", message=f"시뮬레이터가 {device}를 열지 않습니다 — "
+                                                   f"data/ros2_sim_{module}.log 를 보세요")
+                return row
+            time.sleep(1.0)
+        row["simulator"] = "started"
+    args = [python_exe(), "-m", "hangeul_runtime.server", "--module", module,
+            "--port", str(port), "--device", device]
+    # ROS의 setup이 PYTHONPATH 앞에 자기 경로를 붙인다 — runtime/src는 그 뒤에 남는다.
+    _spawn(f"runtime_{port}", _ros2_shell(files, " ".join(shlex.quote(a) for a in args)),
+           ROOT / "data" / f"runtime_{module}.log", str(ROOT / "runtime" / "src"))
+    url = f"http://127.0.0.1:{port}/api/estop-status"
+    answer = _wait_json(url, 25)
+    if answer is None:
+        row.update(state="failed", message=f"런타임이 답하지 않습니다 — data/runtime_{module}.log 를 보세요")
+        return row
+    row.update(state="started", device=answer.get("device", device), message=_runtime_message(answer))
+    row.update(_readiness(answer, desc))
+    return row
+
+
+def stop_ros2_simulators() -> list[int]:
+    """실행기가 띄운 시뮬레이터만 끈다. 사람이 손으로 띄운 것은 건드리지 않는다."""
+    stopped = []
+    for path in sorted(RUN_DIR.glob("ros2_sim_*.pid")) if RUN_DIR.exists() else []:
+        try:
+            pid = int(json.loads(path.read_text())["pid"])
+        except (OSError, ValueError, KeyError):
+            path.unlink(missing_ok=True)
+            continue
+        cmd = _cmdline(pid)
+        if _alive(pid) and "ros2" in cmd and "launch" in cmd:
+            try:
+                os.killpg(pid, signal.SIGINT)      # launch가 rviz2 · move_group까지 거둔다
+            except OSError:
+                pass
+            for _ in range(60):
+                if not _alive(pid):
+                    break
+                time.sleep(0.25)
+            else:
+                try:
+                    os.killpg(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+            stopped.append(pid)
+        path.unlink(missing_ok=True)
+    return stopped
 
 
 # ── 프로세스 ────────────────────────────────────────────────────
@@ -400,6 +516,8 @@ def start_runtime(group: dict[str, Any]) -> dict[str, Any]:
         return row
     desc = descriptors().get(module) or {}
     simulate = bool(desc.get("simulated"))
+    if not simulate and desc.get("ros2"):
+        return start_ros2_runtime(group, desc, row)
     device = "" if simulate else find_device(desc)
     if not simulate and not device:
         reason = wsl_attach(desc)
@@ -489,6 +607,7 @@ def stop_all() -> list[int]:
     pids = sorted(_all_ours())
     for pid in pids:
         _kill(pid)
+    pids += stop_ros2_simulators()                # 런타임을 먼저 끄고 제어기를 내린다
     for path in _pid_files():
         path.unlink(missing_ok=True)
     return pids
