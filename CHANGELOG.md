@@ -1,3 +1,17 @@
+# 0.5.2 — FR5 rviz window and Start-menu shortcut; WSL-only made explicit (2026-11-09)
+
+- The simulator now opens a hangeul rviz screen (`install/ros2/fairino5.rviz`): fixed window size,
+  MoveIt's goal-state arm (orange) hidden, the real arm (grey) drawn solid. The orange arm looked like
+  a second robot; hangeul does not plan with MoveIt. The window *position* is not fixed — WSLg ignores
+  it (tested).
+- Windows Start-menu shortcut "FR5 rviz (hangeul)" to reopen the view after closing it:
+  `sudo ./install/ros2/install_fr5_rviz_shortcut.sh` writes it for wherever this repository lives.
+- Docs: FR5 runs on WSL/Linux only. A native Windows install (`Setup.bat` · `Start.bat`) does not
+  start it and says why; the README had listed `run_wsl.bat` without saying so.
+- `install/windows/run_wsl.bat`: Korean comment lines were misread by cmd and their fragments run as
+  commands ("'은' is not recognized"). Comments are ASCII now; what the file does is unchanged.
+- No robot behaviour changed.
+
 # 0.5.1 — The robot list says what happened in words (2026-11-08)
 
 - The robot list showed the raw verdict code (`Last: ACTUAL_MOTION_EXECUTED_ONCE`). Words for

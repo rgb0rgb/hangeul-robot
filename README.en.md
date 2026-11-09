@@ -82,8 +82,17 @@ measured. There is no hand.
 | Out-of-range request | Refused; nothing sent to the controller |
 | Move · stop · release stop | Confirmed on `/joint_states` |
 | Save poses and run a sequence from the screen | Screen log matches the `/joint_states` trajectory |
-| One `run.sh` / `run_wsl.bat` | Simulator, rviz2, runtime and screen come up in order |
+| One `run.sh` in WSL | Simulator, rviz2, runtime and screen come up in order |
 | Physical robot | **Not verified** |
+
+**WSL/Linux only.** ROS 2 lives there. A native Windows install (`Setup.bat` · `Start.bat`) does not
+start FR5 and says why. To start it by double-clicking on Windows, use `install/windows/run_wsl.bat`
+(set `PROJECT` inside to the WSL path).
+
+**rviz window** — only a view; closing it does not disconnect the robot. The grey arm is the real one.
+The window size is fixed but WSLg decides its position, so drag it in if it lands off-screen. A Windows
+Start-menu shortcut that reopens it (Ubuntu → FR5 rviz (hangeul)) is created once with
+`sudo ./install/ros2/install_fr5_rviz_shortcut.sh`.
 
 ROS 2 Jazzy and a build of the FAIRINO simulator are needed first (outside this repository, `~/fairino_ws`).
 Setup commands and the verification record (Korean): [docs/FAIRINO_FR5_SIMULATION_20261108.md](docs/FAIRINO_FR5_SIMULATION_20261108.md)

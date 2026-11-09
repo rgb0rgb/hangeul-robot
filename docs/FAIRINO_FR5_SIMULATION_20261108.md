@@ -19,7 +19,12 @@ ROS 2 Jazzy(Ubuntu 24.04)가 있어야 한다. FAIRINO 저장소는 **이 저장
 화면에서 **＋ (로봇 추가)** → `FAIRINO FR5 (ROS 2 시뮬레이션)`. 그 뒤로는
 
     ./run.sh                                리눅스/WSL
-    install\windows\run_wsl.bat            윈도우에서 두 번 누르기
+    install\windows\run_wsl.bat            윈도우에서 두 번 누르기 (WSL의 run.sh를 부른다)
+
+**FR5는 WSL/리눅스에서만 뜬다.** ROS 2가 그쪽에만 있기 때문이다. 윈도우에 직접 설치한 판
+(`Setup.bat` · `Start.bat`)에서는 실행기가 FR5를 띄우지 않고 "ROS 2 부품은 WSL/리눅스에서만
+띄웁니다"라고 알린다. 윈도우에서 두 번 눌러 쓰려면 `run_wsl.bat`을 쓰고, 파일 안의 `PROJECT`를
+이 저장소의 WSL 경로로 맞춘다.
 
 실행기가 다음 순서로 띄운다.
 
@@ -32,15 +37,32 @@ ROS 2 Jazzy(Ubuntu 24.04)가 있어야 한다. FAIRINO 저장소는 **이 저장
 
 손으로 띄우려면:
 
-    # 터미널 A
+    # 터미널 A (이 저장소 폴더에서)
     source /opt/ros/jazzy/setup.bash && source ~/fairino_ws/install/setup.bash
-    ros2 launch fairino5_v6_moveit2_config demo.launch.py
+    ros2 launch fairino5_v6_moveit2_config demo.launch.py rviz_config:=$PWD/install/ros2/fairino5.rviz
     # 터미널 B
     source /opt/ros/jazzy/setup.bash
     ./install/run_runtime.sh fairino5
 
 MoveIt의 Plan/Execute는 쓰지 않는다. 명령 경로가 둘이 되면 화면이 아는 자세와 팔이 어긋난다.
 rviz2는 팔을 **보는** 용도다.
+
+## rviz 화면
+
+rviz는 팔을 **보는** 화면일 뿐이다. 닫아도 시뮬레이터 제어기와 런타임은 그대로 돈다.
+실행기가 띄우는 시뮬레이터는 hangeul 전용 화면 설정 `install/ros2/fairino5.rviz`를 쓴다.
+
+- 창 크기 1600×1100 고정(맨 아래 `Window Geometry`의 숫자로 바꾼다)
+- MoveIt의 목표 자세(주황 팔)는 끈다 — hangeul은 MoveIt으로 계획하지 않는다. 회색 팔이 실제 팔이다
+- **창 위치는 고정되지 않는다.** WSLg가 처음 뜨는 창의 위치를 스스로 정한다(2026-11-09 시험).
+  화면 밖으로 걸치면 제목 표시줄을 끌어 옮긴다
+
+rviz만 닫았다면 윈도우 시작 메뉴 → **Ubuntu → FR5 rviz (hangeul)** 로 다시 연다.
+시뮬레이터가 떠 있으면 화면만 열고, 없으면 시뮬레이터를 rviz와 함께 띄운다
+(이때의 시뮬레이터는 `stop.sh`로 꺼지지 않는다 — rviz 창을 닫으면 함께 꺼진다).
+바로가기는 처음 한 번 만든다(저장소를 옮겼으면 다시):
+
+    sudo ./install/ros2/install_fr5_rviz_shortcut.sh
 
 ## 연결 판정
 

@@ -86,9 +86,9 @@
       "~/fairino_ws/install/setup.bash"
     ],
     "simulator": {
-      "command": "ros2 launch fairino5_v6_moveit2_config demo.launch.py",
+      "command": "ros2 launch fairino5_v6_moveit2_config demo.launch.py rviz_config:=$PWD/install/ros2/fairino5.rviz",
       "ready_timeout_s": 60,
-      "note": "실행기가 제어기를 못 찾을 때만 띄운다. 실물 FR5에 붙일 때는 이 칸을 지운다"
+      "note": "실행기가 제어기를 못 찾을 때만 띄운다. rviz 화면(창 크기·위치)은 install/ros2/fairino5.rviz. 실물 FR5에 붙일 때는 이 칸을 지운다"
     }
   }
 }

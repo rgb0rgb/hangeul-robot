@@ -149,8 +149,17 @@ FAIRINO 공식 ROS 2 패키지(`frcobot_ros2`, ros2_control mock)에 붙였습�
 | 범위 밖 요청 | 거절, 컨트롤러에 아무것도 나가지 않음 |
 | 이동 · 정지 · 정지 해제 | `/joint_states`로 확인 |
 | 화면에서 자세 저장 · 순서 실행 | 화면 기록과 `/joint_states` 궤적 일치 |
-| `run.sh` / `run_wsl.bat` 한 번 | 시뮬레이터 · rviz2 · 런타임 · 화면이 차례로 뜸 |
+| WSL의 `run.sh` 한 번 | 시뮬레이터 · rviz2 · 런타임 · 화면이 차례로 뜸 |
 | 실물 | **미검증** |
+
+**WSL/리눅스에서만 됩니다.** ROS 2가 그쪽에만 있기 때문입니다. 위의 `Setup.bat` · `Start.bat`으로
+윈도우에 직접 설치한 판에서는 FR5를 띄우지 않고 그 이유를 알려 줍니다. 윈도우에서 두 번 눌러 쓰려면
+`install/windows/run_wsl.bat`(파일 안의 `PROJECT`를 WSL 경로로)을 씁니다.
+
+**rviz 화면** — 팔을 보는 창일 뿐이라 닫아도 로봇은 계속 붙어 있습니다. 회색 팔이 실제 팔입니다.
+창 크기는 고정되지만 위치는 WSLg가 정하므로, 화면 밖에 걸치면 끌어 옮깁니다. rviz만 닫았을 때
+다시 여는 윈도우 시작 메뉴 바로가기(Ubuntu → FR5 rviz (hangeul))는
+`sudo ./install/ros2/install_fr5_rviz_shortcut.sh` 로 한 번 만듭니다.
 
 ROS 2 Jazzy와 FAIRINO 시뮬레이터 빌드가 먼저 있어야 합니다(저장소 밖 `~/fairino_ws`).
 준비 명령과 검증 기록: [docs/FAIRINO_FR5_SIMULATION_20261108.md](docs/FAIRINO_FR5_SIMULATION_20261108.md)
