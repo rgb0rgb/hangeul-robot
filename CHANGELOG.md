@@ -1,3 +1,16 @@
+# 0.5.5 — Tests run in a fresh environment; one refusal message was English (2026-11-11)
+
+- In a fresh environment the test suite failed at collection: `yaml` was not listed anywhere, and
+  `serial` / `dynamixel_sdk` came only from `requirements-robot.txt`, whose install the installer may
+  skip. `requirements-test.txt` now lists `pyyaml`, `pyserial` and `dynamixel-sdk` (all pure Python).
+  Checked with only `requirements-test.txt` installed, no ROS 2: 364 passed, 19 skipped.
+- The README still showed an old result (300 passed); updated.
+- The unknown-joint refusal was the only English message ("Unknown or disabled joint: j9"); it is
+  Korean now, like the others. Same for the simulated arm's error. A test checks the wording.
+- Checked, no change: the Korean `echo` lines in `install/windows/run_wsl.bat`, including the failure
+  block, print correctly; only Korean `REM` lines were misread (fixed in 0.5.2).
+- No robot behaviour changed.
+
 # 0.5.4 — Resume after pausing during a pose's wait time continues the run (2026-11-10)
 
 - Pausing during a pose's wait time (`delay_sec`) cleared the wait timer and handed nothing to Resume,

@@ -128,10 +128,10 @@ arm and OMX share the default port 8601; register only one of them.
 .venv/bin/python -m pytest -q
 ```
 
-Verified in this prepared public folder:
+Verified in a fresh environment with only `requirements-test.txt` installed (no ROS 2, no robot packages) (0.5.5):
 
 ```text
-300 passed, 19 skipped
+364 passed, 19 skipped
 ```
 
 ## Excluded features

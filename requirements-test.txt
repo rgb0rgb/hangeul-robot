@@ -1,3 +1,7 @@
 -r requirements.txt
 pytest>=8
 httpx>=0.27
+# 시험이 직접 불러온다 — 로봇 패키지(requirements-robot.txt) 설치가 건너뛰어져도 시험은 모여야 한다
+pyyaml>=6
+pyserial>=3.5
+dynamixel-sdk>=3.7

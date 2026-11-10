@@ -202,10 +202,10 @@ DEVICE=/dev/ttyUSB1 ./install/run_runtime.sh arm_omx
 .venv/bin/python -m pytest -q
 ```
 
-현재 공개 폴더 기준 확인:
+ROS 2·로봇 패키지 없이 `requirements-test.txt`만 설치한 새 환경에서 확인(0.5.5):
 
 ```text
-300 passed, 19 skipped
+364 passed, 19 skipped
 ```
 
 ## 공개판에서 사용하지 않는 기능

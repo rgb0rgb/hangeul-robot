@@ -50,7 +50,7 @@ class SimulatedArmAdapter(RobotArmAdapter):
 
     def clamp(self, joint_name: str, target: int) -> int:
         if str(joint_name) not in self._positions or str(joint_name) in self.excluded_joints:
-            raise ValueError(f"Unknown or disabled simulated joint: {joint_name}")
+            raise ValueError(f"알 수 없거나 꺼 둔 관절입니다(시뮬레이션): {joint_name}")
         return int(target)
 
     def move_joints(
