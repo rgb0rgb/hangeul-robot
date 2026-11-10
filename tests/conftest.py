@@ -50,6 +50,48 @@ def client(tmp_path, monkeypatch):
     return TestClient(app_mod.app)
 
 
+# 사람이 실제로 띄우는 콘솔·런타임이 쓰는 자리(화면 8099, 로봇 8601~, 설치본 시험 8199 등).
+REAL_SERVICE_PORTS = range(8000, 9000)
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
+
+
+def _is_real_service(url: str) -> bool:
+    import urllib.parse
+    try:
+        parts = urllib.parse.urlsplit(url)
+        return (parts.scheme in ("http", "https") and (parts.hostname or "") in LOOPBACK_HOSTS
+                and parts.port in REAL_SERVICE_PORTS)
+    except ValueError:
+        return False
+
+
+@pytest.fixture(autouse=True)
+def never_send_to_real_robots(monkeypatch):
+    """**시험은 실제로 떠 있는 로봇에 아무것도 보내지 않는다.**
+
+    시험용 로봇 구성(fixtures/robots/young_omx.json)의 주소가 실제 로봇1의 주소
+    (127.0.0.1:8601)와 같다. 그래서 `/api/estop`을 부르는 시험이 **떠 있던 실제
+    로봇1에 긴급 정지를 걸었고**, 화면이 그것을 보고 돌던 FR5 반복을 멈췄다. 정지
+    해제를 부르는 시험은 운영자가 건 진짜 정지를 풀 수도 있었다(2026-11-10).
+
+    시험이 직접 띄우는 서버는 빈 자리(0번 → 임시 포트)를 쓰므로 막히지 않는다.
+    막힌 요청은 런타임이 꺼져 있을 때와 같은 URLError가 된다 — 시험 결과가
+    실제 로봇이 떠 있는지에 따라 달라지지 않는다.
+    """
+    import urllib.error
+    import urllib.request
+
+    real_urlopen = urllib.request.urlopen
+
+    def guarded(url, *args, **kwargs):
+        target = url.full_url if isinstance(url, urllib.request.Request) else str(url)
+        if _is_real_service(target):
+            raise urllib.error.URLError(f"시험 중에는 실제 서비스로 보내지 않습니다: {target}")
+        return real_urlopen(url, *args, **kwargs)
+
+    monkeypatch.setattr(urllib.request, "urlopen", guarded)
+
+
 @pytest.fixture(autouse=True)
 def never_touch_real_robot_data(tmp_path_factory, monkeypatch):
     """**시험은 운영자의 실제 파일에 쓰지 않는다.**
