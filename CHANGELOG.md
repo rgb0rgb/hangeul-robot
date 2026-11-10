@@ -1,3 +1,17 @@
+# 0.5.3 — Rest in Work/Rest mode ends on time even when the window is hidden (2026-11-10)
+
+- Rest was counted as 600 one-second browser timers. With the window hidden (e.g. switched to another
+  Windows virtual desktop) the browser ran those chained timers about once a minute, so a 10-minute rest
+  could last hours and work never resumed. Rest now ends by its end time, and is checked again the moment
+  the page becomes visible.
+- Pausing during rest cleared the rest timer and handed nothing to Resume, so Resume never restarted the
+  run. Pause now keeps the rest time left and Resume continues from it.
+- Checked in a browser with throttled timers, hidden→visible and pause during rest; robot calls were
+  faked in the test.
+- Not yet: the Work/Rest schedule still runs inside the browser page. Closing the page, or the browser
+  freezing it, stops the schedule. A pose's wait time (`delay_sec`) likely has the same pause problem
+  (not fixed or tested).
+
 # 0.5.2 — FR5 rviz window and Start-menu shortcut; WSL-only made explicit (2026-11-09)
 
 - The simulator now opens a hangeul rviz screen (`install/ros2/fairino5.rviz`): fixed window size,

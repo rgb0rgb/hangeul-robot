@@ -2810,6 +2810,18 @@ function triggerEStop() {
   }
 }
 
+// 안 보이던 화면이 다시 보이면 기다리던 타이머를 바로 돌린다. 브라우저가 숨은 페이지의
+// 타이머를 늦추므로, 돌아왔을 때 휴식이 끝났는데도 멈춰 있는 것처럼 보이지 않게 한다.
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden || !state.running || state.paused || !state.timerResume) return;
+  var pending = state.timerResume;
+  if (state.activeTimer) {
+    clearTimeout(state.activeTimer);
+    state.activeTimer = null;
+  }
+  pending();
+});
+
 function togglePause() {
   if (!state.running && !state.paused) return;
   var statusEl = document.getElementById('s-exec-status');
@@ -2845,6 +2857,14 @@ function togglePause() {
     clearTimeout(state.activeTimer);
     state.activeTimer = null;
   }
+  // 지운 타이머가 할 일(휴식 세기)을 계속 진행에 넘긴다. 이게 없으면 휴식 중
+  // 일시정지 → 계속 진행을 눌러도 아무것도 다시 시작되지 않았다.
+  if (state.timerPauseHook) state.timerPauseHook();
+  if (state.timerResume && !state.resumeExecution) {
+    state.resumeExecution = state.timerResume;
+  }
+  state.timerResume = null;
+  state.timerPauseHook = null;
   fetch(BACKEND + '/api/pause-hold', { method: 'POST' })
     .then(function(r) { return r.json(); })
     .then(function(d) {
@@ -2930,21 +2950,42 @@ function doExecute() {
     if (isJobTimeExpired()) return;
     
     resetQueueVisuals();
-    var restTimeRemainingSec = Math.round(restMin * 60);
-    
+    // 휴식은 '몇 번 셌나'가 아니라 '언제 끝나나'로 판단한다. 전에는 1초 타이머를
+    // 600번 이어 세었는데, 창이 안 보이면(가상 데스크톱 이동 등) 브라우저가 이어진
+    // 타이머를 1분에 한 번만 돌려 10분 휴식이 몇 시간이 됐다(2026-11-10 실측:
+    // 10:36:55 휴식 시작, 22분 뒤에도 재개 안 됨). 타이머가 늦게 와도 끝 시각이
+    // 지났으면 바로 작동을 재개한다.
+    var restEndsAt = Date.now() + restMin * 60 * 1000;
+    var restLeftWhenPaused = null;
+
     slog(lang === 'ko' ? '휴식 기동: ' + restMin + '분 정지 유지 시작' : 'Rest started: holding position for ' + restMin + 'm', 's-log-ok');
-    
+
+    // 일시정지 동안에는 휴식 시간이 줄지 않는다 — 누른 순간의 남은 시간을 쥐었다가 이어서 쓴다.
+    // 일시정지가 타이머를 지우므로 tickRest가 아니라 일시정지 쪽에서 불러야 제때 잡힌다.
+    function holdRest() {
+      if (restLeftWhenPaused === null) restLeftWhenPaused = Math.max(0, restEndsAt - Date.now());
+    }
+
     function tickRest() {
+      state.timerResume = null;
+      state.timerPauseHook = null;
       if (!state.running) return;
+      if (state.paused) holdRest();
       if (pauseIfNeeded(tickRest)) return;
+      if (restLeftWhenPaused !== null) {
+        restEndsAt = Date.now() + restLeftWhenPaused;
+        restLeftWhenPaused = null;
+      }
       if (isJobTimeExpired()) return;
-      
-      if (restTimeRemainingSec <= 0) {
+
+      var restLeftMs = restEndsAt - Date.now();
+      if (restLeftMs <= 0) {
         slog(lang === 'ko' ? '휴식 기동 완료! 새로운 작동 주기 시작' : 'Rest complete! Starting new work cycle.', 's-log-ok');
         workStartTime = Date.now();
         qIdx = 0;
         runNext();
       } else {
+        var restTimeRemainingSec = Math.ceil(restLeftMs / 1000);
         var min = Math.floor(restTimeRemainingSec / 60);
         var sec = restTimeRemainingSec % 60;
         
@@ -2958,8 +2999,11 @@ function doExecute() {
             ? '[전체남음 ' + remJobHours + 'h ' + remJobMin + 'm] 정지 휴식 중 (남은 시간: ' + min + '분 ' + sec + '초)'
             : '[Total remaining ' + remJobHours + 'h ' + remJobMin + 'm] Resting (time left: ' + min + 'm ' + sec + 's)';
         }
-        restTimeRemainingSec--;
-        state.activeTimer = setTimeout(tickRest, 1000);
+        // 일시정지가 이 타이머를 지우므로, 계속 진행이 부를 함수를 미리 걸어 둔다.
+        // 안 보이던 페이지가 다시 보일 때도 이것을 바로 부른다(아래 visibilitychange).
+        state.timerResume = tickRest;
+        state.timerPauseHook = holdRest;
+        state.activeTimer = setTimeout(tickRest, Math.min(1000, restLeftMs));
       }
     }
     
@@ -3141,6 +3185,8 @@ function finishExecution(success, reason) {
   state.running = false;
   state.paused = false;
   state.resumeExecution = null;
+  state.timerResume = null;
+  state.timerPauseHook = null;
   if (state.activeTimer) {
     clearTimeout(state.activeTimer);
     state.activeTimer = null;
