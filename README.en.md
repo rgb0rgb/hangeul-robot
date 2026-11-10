@@ -11,15 +11,28 @@ It does not include customer-specific integrations or commercial operation tools
 
 ## Getting started on Windows (no technical knowledge needed)
 
-1. Click the green **Code** button above → **Download ZIP**.
-2. Unzip it **somewhere permanent**, e.g. `C:\HangeulRobot` — not a folder you tidy up later such as
-   Downloads, because the desktop shortcuts point here. Unzipping creates a `hangeul-robot-main`
-   folder; the setup and launch files are **inside it**.
-3. Double-click **`Setup.bat`** inside `hangeul-robot-main`. It installs Python if needed
-   (internet required, a few minutes), downloads the dependencies, creates the desktop
-   shortcuts **[한글 로봇]** (start) and **[한글 로봇 초기화]** (full reset), and starts.
+1. From [**Releases**](https://github.com/rgb0rgb/hangeul-robot/releases/latest), download the single file
+   **`HangeulRobot-Setup-<version>.exe`**.
+2. Double-click it. If a blue **"Windows protected your PC"** window appears, press
+   **More info → Run anyway** (the program is not code-signed, so this shows once).
+3. Press **Install** → **Finish**. Hangeul Robot starts, and the desktop shortcuts **[한글 로봇]**
+   (start) and **[한글 로봇 초기화]** (full reset) are created.
 4. When the browser opens, use **Add robot**. Plug the robot in over USB — the launcher
    finds it by its USB identity, so you do not need to know the COM number.
+
+No internet, no Python install and no administrator rights are needed — everything is inside the
+installer. It installs to your user folder (`%LOCALAPPDATA%\Programs\HangeulRobot`) without asking.
+**Uninstall** from Start menu → 한글 로봇 → **한글 로봇 지우기**. Taught poses, registered robots and
+safety limits are kept, so installing again carries on where you left off.
+
+**When a new version is out**, a blue strip at the top of the screen says so (when online).
+**Nothing is downloaded until you press [지금 업데이트] (Update now) and confirm.** It is refused while
+a robot is working, and the download is used only if its signature and fingerprint match. Hangeul
+Robot is off for a minute or two; registered robots, taught poses and safety limits stay. If the new
+version does not come up, it goes back to the previous one by itself.
+
+If you cannot use the installer (company security, etc.), the old way still works: green **Code** →
+**Download ZIP** → unzip somewhere permanent → double-click **`Setup.bat`** inside (internet required).
 
 **When something goes wrong** — double-click **[한글 로봇 초기화]** (`Reset.bat`) or press
 **Settings → Full reset & restart**. Everything is stopped, leftover blocks (disconnect

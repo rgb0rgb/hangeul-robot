@@ -1,0 +1,9 @@
+# 윈도우 설치 파일(HangeulRobot-Setup-*.exe)에 담는 부품 — 판을 고정한다.
+# 실물로 써 온 WSL 환경의 판이다(2026-11-10 확인). 설치할 때마다 판이 달라지면
+# 어제 되던 것이 오늘 안 되는 일이 생긴다. 올릴 때는 실물로 다시 확인하고 바꾼다.
+fastapi==0.136.1
+uvicorn==0.46.0
+pyserial==3.5
+dynamixel-sdk==4.0.3
+pymycobot==4.0.6
+cryptography==50.0.0    # 업데이트 목록 서명 확인(Ed25519)

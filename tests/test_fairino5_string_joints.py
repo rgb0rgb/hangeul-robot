@@ -112,7 +112,7 @@ def test_unknown_string_joint_is_refused_not_500(client):
     answer = client.post("/api/move-to", json={"joint_id": "j7", "target_ticks": 0})
     assert answer.status_code == 200
     assert answer.json()["success"] is False
-    # 다른 거절 안내와 같이 한국어로 — 이것만 영어였다(공개본 검토 지적 20261111)
+    # 다른 거절 안내와 같이 한국어로 — 이것만 영어였다(공개본 검토 지적 20261110)
     assert "알 수 없거나 꺼 둔 관절입니다: j7" in answer.json()["blocked_reasons"][0]
     assert client.node.goals == []
 

@@ -1,5 +1,6 @@
 # Console and simulation runtime
 fastapi>=0.110
 uvicorn>=0.27
+cryptography>=42    # 새 판 알림: 업데이트 목록의 서명을 확인한다
 # Physical hardware: pip install -r requirements-robot.txt
 # Tests: pip install -r requirements-test.txt

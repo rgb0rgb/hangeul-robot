@@ -160,6 +160,14 @@ body {
 /* ─── 경고 배너 ─── */
 .s-warn { padding: 8px 24px; font-size: 0.8rem; background: rgba(250,204,21,0.08); color: #fbbf24; border-bottom: 1px solid rgba(250,204,21,0.15); }
 .s-warn.s-warn-active { background: rgba(248,113,113,0.12); color: #f87171; border-bottom-color: rgba(248,113,113,0.2); }
+/* 새 판 알림 — 안전 주의 띠와 같은 모양, 파란색 (update.js) */
+.s-update { padding: 8px 24px; font-size: 0.8rem; background: rgba(14,165,233,0.10); color: #38bdf8; border-bottom: 1px solid rgba(14,165,233,0.25); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.s-update[hidden] { display: none; }
+.s-update-safety { color: #f87171; font-weight: 700; }
+.s-update-hint { color: #94a3b8; }
+.s-update-btn { padding: 3px 12px; font-size: 0.78rem; }
+.s-update-notes { flex-basis: 100%; max-height: 240px; overflow: auto; margin: 4px 0 0; padding: 10px; background: #0f172a; color: #cbd5e1; border-radius: 6px; font-size: 0.75rem; white-space: pre-wrap; }
+.s-update-notes[hidden] { display: none; }
 
 /* ─── 메인 레이아웃 ─── */
 .s-main { max-width: var(--dexter-main-width, 1120px); margin: 0 auto; padding: 28px 20px 60px; }

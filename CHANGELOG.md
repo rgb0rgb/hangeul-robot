@@ -1,4 +1,50 @@
-# 0.5.5 — Tests run in a fresh environment; one refusal message was English (2026-11-11)
+# 0.6.0 — Windows installer, and updates from GitHub Releases with the operator's consent (2026-11-10)
+
+**Updates**
+
+- When the console starts, and once a day, it reads the latest release's `latest.json` from GitHub
+  Releases. If there is a newer version, a blue strip appears under the safety notice:
+  "새 판 … 이 있습니다" with [바뀐 것 보기] [지금 업데이트] [나중에]. A version that changes safety
+  behaviour is marked in red. Without internet nothing is shown.
+- **Nothing is downloaded until a person presses [지금 업데이트] and confirms.** It is refused while a
+  robot is running, scheduled, in a multi-robot run, in a repeat job, or while the screen is running a
+  sequence.
+- `latest.json` is trusted only with a valid Ed25519 signature from our release key (the private key is
+  not in the repository); the installer is used only if its size and SHA-256 match the signed list. A
+  forged or tampered release is never announced or installed.
+- Applying: a helper outside the console runs the new installer silently (it stops the robot programs
+  first and keeps the data), starts Hangeul Robot again and checks that the new version answers. If it
+  does not, the helper reinstalls the current version (downloaded beforehand) and that version is not
+  offered again. Every step goes to `data/updates/history.jsonl` and the screen log.
+- Only installer-based Windows copies update themselves; a git copy only shows the notice.
+- Checked on Windows 10 with a local signed test release: notice, consent, 0.6.0 → 0.6.1 in about 50 s
+  with the registered robot and a saved pose kept; and a release whose installer did not produce the
+  promised version was rolled back automatically.
+- Release steps: `tools/build_windows_installer.py` → `tools/release.py sign` → `tools/release.py upload`
+  (or drag the three files into a GitHub release) — see `docs/PUBLISH.md`.
+
+**Installer**
+
+- New `HangeulRobot-Setup-<version>.exe` (about 30 MB) for people who are not comfortable with
+  computers. Download, double-click, Install, Finish. Before, they had to download a ZIP, unzip it
+  somewhere permanent, find `Setup.bat` inside the folder, and have internet for Python and packages.
+- Everything is inside: Python 3.12 (embeddable) and the packages at pinned versions
+  (`install/windows/installer-requirements.txt`, the versions in real use). No internet, no Python
+  install, no administrator rights; installs to `%LOCALAPPDATA%\Programs\HangeulRobot` without asking.
+- Desktop and Start-menu shortcuts with an icon; "한글 로봇 지우기" (uninstall) in the Start menu.
+- Uninstall stops the robot programs first, then removes the program. **Taught poses, registered
+  robots and safety limits are kept**; an upgrade does not overwrite edited safety limits.
+- Checked on Windows 10: install, start, register the simulated arm, move a joint, save a pose, mark a
+  safety-limit file, uninstall (programs stopped, shortcuts removed, data kept), reinstall (robot,
+  pose and edited limits still there), and the desktop `Start.bat` / `Stop.bat`.
+- `Start.bat` / `Reset.bat` / `Stop.bat` use the bundled `python\python.exe` when present; the
+  ZIP + `Setup.bat` way is unchanged.
+- Built with `python3 tools/build_windows_installer.py` from WSL (needs Inno Setup 6 on Windows).
+- Not yet: the installer is not code-signed, so Windows SmartScreen shows a warning the first time
+  (not seen in testing — the test copy was not downloaded from the internet). FR5 / ROS 2 is not in
+  the installer (WSL/Linux only). USB drivers are not installed by it.
+
+# 0.5.5 — Tests run in a fresh environment; one refusal message was English (2026-11-10)
 
 - In a fresh environment the test suite failed at collection: `yaml` was not listed anywhere, and
   `serial` / `dynamixel_sdk` came only from `requirements-robot.txt`, whose install the installer may

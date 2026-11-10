@@ -37,6 +37,7 @@ from .instance_store import InstanceStore
 from .registry import Registry, RegistryError
 from .runtime_link import RuntimeLink
 from .repeat_work import RepeatWork, validate as validate_repeat
+from .updater import Updater, UpdateError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 WEB_DIR = PROJECT_ROOT / "console" / "web"
@@ -57,6 +58,7 @@ TASK_PATH = PROJECT_ROOT / "data" / "tasks.json"
 leases = LeaseBook(PROJECT_ROOT / "data" / "leases")
 CONSOLE_HOLDER = "console"
 repeat_work = RepeatWork()
+updater = Updater(PROJECT_ROOT)
 
 
 def _repeat_busy(instance, owner=""):
@@ -242,6 +244,10 @@ def _on_startup() -> None:
     except Exception as exc:                    # 기준선 기록 실패가 기동을 막지는 않는다
         _log(f"자세 기준선 기록 실패: {exc}", "s-log-err")
     _log_launch_report()
+    _log_update_result()
+    # 새 판 확인은 뒤에서 한다 — 인터넷이 없어도 화면은 바로 떠야 한다. 시험 중에는 밖으로 나가지 않는다.
+    if os.environ.get("HANGEUL_UPDATE_CHECK", "1") != "0" and not os.environ.get("PYTEST_CURRENT_TEST"):
+        updater.check_in_background()
 
 
 _LAUNCH_WORDS = {"started": "시작", "already_running": "이미 떠 있음", "no_device": "장치 없음",
@@ -2326,6 +2332,93 @@ class FreshFiles(StaticFiles):
         response = super().file_response(*args, **kwargs)
         response.headers.update(NO_CACHE)
         return response
+
+
+# ── 업데이트 (GitHub Releases) ──────────────────────────────────
+# 사람이 누르기 전에는 아무것도 받지 않는다. 확인·검증·적용은 updater.py가 한다.
+def _log_update_result() -> None:
+    """지난 업데이트가 어떻게 끝났는지 — 다시 켜진 콘솔이 화면 기록에 옮긴다.
+
+    도우미는 새 콘솔이 답하는 것을 본 **뒤에** 결과를 쓴다. 그래서 켜질 때 한 번만 읽으면
+    늘 놓친다(20261110 윈도우 시험) — 화면이 상태를 물을 때마다 본다(파일 하나 확인).
+    """
+    result = updater.last_result()
+    if not result:
+        return
+    if result.get("result") == "applied":
+        _log(f"업데이트 완료 — 지금 판 {updater.current_version()}", "s-log-ok")
+        return
+    _log(f"업데이트가 끝까지 되지 않아 되돌렸습니다 ({result.get('result')}) — 지금 판 "
+         f"{updater.current_version()}", "s-log-err")
+    # 실패한 판을 다시 권하지 않는다. 더 새 판이 나오면 다시 알린다.
+    failed = str(result.get("version") or "")
+    _update_console(lambda state: state.__setitem__("update_dismissed", failed))
+
+
+def _update_busy_reasons(screen_running: bool) -> list[str]:
+    """로봇이 일하는 중이면 업데이트하지 않는다. 업데이트는 로봇 프로그램을 끄기 때문이다."""
+    reasons = []
+    for instance in registry.all():
+        rt = _store(instance.instance_id).runtime()
+        run_state = rt.get("run_state") or "대기"
+        if run_state in ("실행", "예약") or (rt.get("multi_run") or {}).get("state") in ACTIVE_MULTI_STATES:
+            reasons.append(f"{instance.display_name} {run_state}")
+        elif repeat_work.busy(instance.runtime_url or instance.instance_id):
+            reasons.append(f"{instance.display_name} 반복 작업 중")
+    if screen_running:
+        reasons.append("화면에서 순서를 실행하는 중")
+    return reasons
+
+
+@app.get("/api/update/status")
+def update_status() -> dict:
+    _log_update_result()
+    status = updater.status(dismissed=str(_console().get("update_dismissed") or ""))
+    status["busy_reasons"] = _update_busy_reasons(False)
+    return status
+
+
+@app.post("/api/update/check")
+def update_check() -> dict:
+    updater.check()
+    return update_status()
+
+
+@app.post("/api/update/dismiss")
+def update_dismiss(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    """'나중에' — 이 판은 다시 띄우지 않는다. 더 새 판이 나오면 다시 알린다."""
+    version = str(payload.get("version") or "")
+    _update_console(lambda state: state.__setitem__("update_dismissed", version))
+    return {"success": True, "dismissed": version}
+
+
+@app.post("/api/update/apply")
+def update_apply(payload: dict[str, Any] = Body(default_factory=dict)) -> dict:
+    if payload.get("confirmed") is not True:
+        return {"success": False, "error": "사람의 확인이 없습니다 — 업데이트하지 않습니다"}
+    operator = str(payload.get("operator") or "operator")
+    busy = _update_busy_reasons(bool(payload.get("screen_running")))
+    status = updater.status()
+    try:
+        if not status["available"]:
+            raise UpdateError("받을 새 판이 없습니다")
+        if not status["can_apply"]:
+            raise UpdateError("이 사본은 설치 파일로 깐 것이 아니라 스스로 바꾸지 않습니다")
+        if busy:
+            raise UpdateError("로봇이 일하는 중이라 업데이트하지 않습니다: " + ", ".join(busy))
+    except UpdateError as exc:
+        return {"success": False, "error": str(exc)}
+
+    def work() -> None:
+        try:
+            updater.apply(operator=operator, busy_reasons=busy)
+        except UpdateError as exc:
+            _log(f"업데이트 중단: {exc}", "s-log-err")
+
+    _log(f"업데이트 시작: {status['current']} → {status['latest']['version']} (허락: {operator})", "s-log-info")
+    threading.Thread(target=work, name="update-apply", daemon=True).start()
+    return {"success": True, "version": status["latest"]["version"],
+            "message": "새 판을 받고 있습니다. 끝나면 한글 로봇이 잠시 꺼졌다가 다시 켜집니다."}
 
 
 @app.get("/")
