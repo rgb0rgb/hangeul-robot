@@ -1,3 +1,13 @@
+# 0.5.4 — Resume after pausing during a pose's wait time continues the run (2026-11-10)
+
+- Pausing during a pose's wait time (`delay_sec`) cleared the wait timer and handed nothing to Resume,
+  so Resume never sent the next pose (reproduced: nothing for 20 seconds). The wait now works like rest
+  in 0.5.3: judged by its end time, with the time left at the moment of Pause kept for Resume.
+- Checked in a browser with faked robot calls: no command is sent while paused, the next pose follows
+  about 4 s after Resume when paused 2 s into a 6 s wait, and a wait without a pause is still 6 s.
+- This closes the wait-time item noted in 0.5.3. The Work/Rest schedule itself still runs inside the
+  browser page.
+
 # 0.5.3 — Rest in Work/Rest mode ends on time even when the window is hidden (2026-11-10)
 
 - Rest was counted as 600 one-second browser timers. With the window hidden (e.g. switched to another

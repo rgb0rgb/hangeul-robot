@@ -3159,11 +3159,35 @@ function doExecute() {
         if (statEl) statEl.textContent = (lang === 'ko' ? '대기 중 (' : 'Waiting (') + delaySec + '초)...';
         slog((lang === 'ko' ? '대기 중: ' : 'Delaying: ') + delaySec + '초...', 's-log-ok');
         
-        state.activeTimer = setTimeout(function() {
+        // 휴식과 같은 방식이다. 일시정지가 이 타이머를 지우므로, 누른 순간의 남은 대기를
+        // 쥐었다가 계속 진행 때 그만큼만 더 기다린다. 전에는 대기 중 일시정지 → 계속 진행을
+        // 눌러도 다음 동작이 나가지 않았다(2026-11-10 재현).
+        var waitEndsAt = Date.now() + delaySec * 1000;
+        var waitLeftWhenPaused = null;
+        var holdWait = function() {
+          if (waitLeftWhenPaused === null) waitLeftWhenPaused = Math.max(0, waitEndsAt - Date.now());
+        };
+        var tickWait = function() {
           state.activeTimer = null;
-          if (pauseIfNeeded(runNext)) return;
-          runNext();
-        }, delaySec * 1000);
+          state.timerResume = null;
+          state.timerPauseHook = null;
+          if (!state.running) return;
+          if (state.paused) holdWait();
+          if (pauseIfNeeded(tickWait)) return;
+          if (waitLeftWhenPaused !== null) {
+            waitEndsAt = Date.now() + waitLeftWhenPaused;
+            waitLeftWhenPaused = null;
+          }
+          var waitLeftMs = waitEndsAt - Date.now();
+          if (waitLeftMs <= 0) {
+            runNext();
+            return;
+          }
+          state.timerResume = tickWait;
+          state.timerPauseHook = holdWait;
+          state.activeTimer = setTimeout(tickWait, waitLeftMs);
+        };
+        tickWait();
       } else {
         runNext();
       }
